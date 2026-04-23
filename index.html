@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Pulse Strike - 动态混战 (v2.1 Stable)</title>
+  <title>Pulse Strike - 生体衰竭 (v7.5 最终防弹版)</title>
   <link href="style.css" rel="stylesheet" type="text/css" />
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
@@ -12,7 +12,7 @@
   <div id="mode-overlay">
     <div id="mode-select-box">
       <h1 class="main-title">PULSE STRIKE</h1>
-      <p class="sub-title">Dynamic Multiplayer Combat (v2.1)</p>
+      <p class="sub-title">Sudden Death Edition (v7.5 Ultra Stable)</p>
       
       <div id="step-version">
         <button class="mode-btn ver-stable" onclick="selectVersion('stable')">正式版 (Stable)</button>
@@ -22,19 +22,20 @@
       <div id="step-mode" style="display: none;">
         <button class="mode-btn mode-pve" onclick="selectMode('pve')">单机对弈 (1 VS 1)</button>
         <button class="mode-btn mode-pvp" onclick="selectMode('pvp')">联机博弈 (多人对战)</button>
+        <button class="mode-btn info-btn" style="background: rgba(88,166,255,0.1);" onclick="showTalentCodex()">📚 圣魔图鉴 (天赋全览)</button>
         <button class="mode-btn info-btn" onclick="toggleRules(true)">📖 查看详细规则</button>
         <button class="back-link" onclick="goBackToVersion()">← 返回版本选择</button>
       </div>
 
       <div id="changelog-section">
-        <div class="section-header">🛠️ 系统更新 (v2.1)</div>
+        <div class="section-header">🛠️ 系统更新 (v7.5 生体衰竭)</div>
         <div class="log-content">
           <div class="log-item">
-            <span class="log-ver">架构与美术双重加固</span>
+            <span class="log-ver">死亡回合与底层肃清</span>
             <ul>
-              <li><strong>代码全展开</strong>：重构底层结构，取消危险的精简写法，极大提升运行稳定性与可维护性。</li>
-              <li><strong>UI 全面回归</strong>：找回并加固了原本丢失的卡片发光特效与动态层次反馈。</li>
-              <li><strong>动态扩容</strong>：完美支持 2人(5血)/3人(7血)/4人(9血) 自适应模式，并修复了恶魔天赋的数值边界问题。</li>
+              <li><strong>幽灵 Bug 肃清</strong>：彻底移除了神圣庇护的底层残留数据，修复了圣戒玩家免疫地刺及弹药上限缩减的严重 Bug。</li>
+              <li><strong>生体衰竭系统</strong>：第 80 回合起，包扎冷却提升至 4 回合；第 100 回合起，包扎永久禁用，且全员护盾上限强制锁定为 4。</li>
+              <li><strong>代码固化</strong>：拒绝一切过度优化与折叠，关闭压缩倾向，使用最冗长但绝对稳定的全量赋值逻辑。</li>
             </ul>
           </div>
         </div>
@@ -42,24 +43,39 @@
     </div>
   </div>
 
+  <div id="codex-modal" style="display: none;" onclick="this.style.display='none'">
+    <div class="modal-content codex-content" onclick="event.stopPropagation()">
+      <h2 style="color: var(--gold); text-align: center; margin-top: 0;">📚 圣魔图鉴</h2>
+      <p style="text-align: center; color: #8b949e; font-size: 0.85em; margin-bottom: 20px;">了解所有机缘与代价，方能百战百胜</p>
+      <div id="codex-list-container" class="rules-body" style="max-height: 60vh; overflow-y: auto; padding-right: 10px;">
+        </div>
+      <button class="close-modal" onclick="document.getElementById('codex-modal').style.display='none'">关闭图鉴</button>
+    </div>
+  </div>
+
   <div id="rules-modal" style="display: none;" onclick="toggleRules(false)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <h2 style="color: var(--blue); margin-top: 0;">📜 战术核心法则</h2>
       <div class="rules-body">
-        <p><strong>1. 基础：</strong>装弹(+1弹药)，防御(+1护盾)。</p>
-        <p><strong>2. 射击：</strong>消耗弹药。伤害 > 护盾时，溢出部分扣除血量。</p>
-        <p><strong>3. 战术克制：</strong></p>
+        <p><strong>1. 基础资源：</strong>装弹(+1弹药)，防御(+1护盾)。</p>
+        <p><strong>2. 射击判定：</strong>消耗弹药。伤害 > 护盾时，溢出部分扣除血量。</p>
+        <p><strong>3. 战术克制与恢复：</strong></p>
         <ul>
           <li><strong>趴下：</strong>躲避射击，但被<strong>地刺</strong>攻击受 2 伤。</li>
           <li><strong>地刺：</strong>针对趴下。若对手出<strong>石头</strong>，地刺反弹 1 伤。</li>
+          <li><strong>包扎：</strong>消耗 2 护盾恢复 1 血。（基础冷却 2 回合，随战局衰竭逐渐延长甚至禁用）</li>
         </ul>
-        <p><strong>4. 多人乱斗：</strong>3人及以上混战时，攻击前必须锁定目标(🎯)。游戏采用纯净回合制，需等待所有人决策完毕。</p>
+        <p><strong>4. 多人乱斗：</strong>3人及以上混战时，攻击前必须锁定目标(🎯)。</p>
       </div>
       <button class="close-modal" onclick="toggleRules(false)">我已了解</button>
     </div>
   </div>
 
   <div id="waiting-room" style="display: none;">
+    <div id="spectator-banner-lobby" style="display:none; background:var(--gold); color:#000; font-weight:bold; text-align:center; padding:10px; border-radius:8px; margin-bottom:20px;">
+      👁️ 您已进入观战模式，正在等待场上玩家开战...
+    </div>
+
     <h2 class="main-title" style="font-size:2.2em;">战前集结大厅</h2>
     <p class="sub-title">将此房间代码分享给好友: <span id="lobby-rid" class="highlight-rid"></span></p>
     
@@ -107,6 +123,10 @@
 
   <div id="game-container" style="display: none;">
     
+    <div id="spectator-banner-game" style="display:none; background:var(--gold); color:#000; font-weight:bold; text-align:center; padding:10px; border-radius:8px; margin-bottom:15px; letter-spacing: 1px;">
+      👁️ 观战模式：您正在实时观看激烈交锋
+    </div>
+
     <div id="game-header">
       <div class="header-left">
         <span class="logo-text">PULSE STRIKE</span>
@@ -167,14 +187,19 @@
       <div id="battle-log-inner">准备就绪，请出招！</div>
     </div>
 
-    <div class="action-panel">
+    <div id="rematch-panel" style="display:none; text-align:center; padding: 25px; background: rgba(88,166,255,0.08); border: 1px solid var(--blue); border-radius: 12px; margin-bottom: 20px;">
+      <h3 style="color:var(--blue); margin-top:0; font-size:1.5em; letter-spacing: 2px;">🏁 战局已结束</h3>
+      <div id="rematch-status" style="margin-bottom: 20px; font-size: 1.05em; color:#c9d1d9; font-weight:bold;"></div>
+      <button id="btn-rematch-action" class="setup-btn host-btn" style="padding: 12px 25px; font-size: 1.1em;"></button>
+    </div>
+
+    <div class="action-panel" id="action-panel-container">
       <div id="action-waiting" style="display: none;">
         <div class="spinner">⏳</div>
         <p>指令已安全锁定，正在等待其他玩家深思熟虑...</p>
       </div>
 
       <div id="action-controls">
-        
         <div class="target-selector" id="target-selector">
           <span class="ts-label">锁定目标 🎯:</span>
           <label id="ts-p1"><input type="radio" name="atk-target" value="p1"> A</label>
@@ -185,9 +210,14 @@
 
         <div class="action-group attack-zone">
           <button class="btn-main reload-btn" onclick="handleInput('reload')">装弹 (RELOAD)</button>
+          
           <div class="shoot-row" id="shoot-controls">
-            <span>射击强度:</span>
             </div>
+          
+          <div class="shoot-row" id="fatal-shoot-controls" style="display:none; margin-top: 15px; background: rgba(163, 113, 247, 0.1); padding: 8px; border-radius: 8px; border: 1px solid rgba(163, 113, 247, 0.3);">
+            <span style="color:var(--purple); font-weight:bold; width: 80px;" id="fatal-shoot-label">蚀命狂击:</span>
+            <div id="fatal-shoot-btns" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+          </div>
         </div>
 
         <div class="action-group tactical-zone">
@@ -196,9 +226,12 @@
             <button class="btn-t t-duck" onclick="handleInput('duck')">趴下</button>
             <button class="btn-t t-spike" onclick="handleInput('ground_spike')">地刺</button>
             <button class="btn-t t-rock" onclick="handleInput('rock')">石头</button>
+            <button class="btn-t t-heal" id="btn-heal" onclick="handleInput('heal')">包扎</button>
+            
+            <button class="btn-t t-holy" id="btn-holy" onclick="handleInput('holy_light')" style="display:none;">圣光</button>
+            <button class="btn-t t-dual" id="btn-dual" onclick="handleInput('dual_heal')" style="display:none;">渡灵</button>
           </div>
         </div>
-
       </div>
     </div>
   </div>
