@@ -8,6 +8,9 @@
   --green: #3fb950; 
   --gold: #d29922; 
   --purple: #a371f7; 
+  --cyan: #39c5bb;
+  --holy: #e3b341;
+  --dual: #61afef;
 }
 
 /* ==================== 基础样式 ==================== */
@@ -130,7 +133,8 @@ body {
 /* ==================== 遮罩层与模态弹窗 ==================== */
 #talent-overlay, 
 #talent-detail-modal, 
-#rules-modal { 
+#rules-modal, 
+#codex-modal { 
   position: fixed; 
   inset: 0; 
   background: rgba(13, 17, 23, 0.85); 
@@ -148,6 +152,11 @@ body {
   width: 320px; 
   border: 1px solid var(--border); 
   box-shadow: 0 0 30px rgba(88, 166, 255, 0.2); 
+}
+
+.codex-content { 
+  width: 90%; 
+  max-width: 500px; 
 }
 
 .rules-body { 
@@ -175,6 +184,14 @@ body {
 
 .close-modal:hover { 
   filter: brightness(1.2); 
+}
+
+.rules-body::-webkit-scrollbar { 
+  width: 4px; 
+}
+.rules-body::-webkit-scrollbar-thumb { 
+  background: var(--border); 
+  border-radius: 10px; 
 }
 
 /* ==================== 天赋选择系统 ==================== */
@@ -236,7 +253,6 @@ body {
   margin: 0; 
 }
 
-/* 圣魔区分边框与发光悬浮 */
 .talent-card.angel { 
   border-bottom: 4px solid var(--green); 
 }
@@ -492,6 +508,9 @@ body {
 .t-duck { background: #8957e5 !important; }
 .t-spike { background: #d29922 !important; }
 .t-rock { background: #6e7681 !important; }
+.t-heal { background: var(--cyan) !important; }
+.t-holy { background: var(--holy) !important; }
+.t-dual { background: var(--dual) !important; }
 
 .btn-t { 
   color: white; 
@@ -504,9 +523,15 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1); 
 }
 
-.btn-t:hover { 
+.btn-t:hover:not(.disabled) { 
   filter: brightness(1.2); 
   transform: translateY(-1px); 
+}
+
+.btn-t.disabled { 
+  opacity: 0.4; 
+  cursor: not-allowed; 
+  transform: none; 
 }
 
 .shoot-row { 
@@ -544,7 +569,7 @@ body {
 
 .tactical-grid { 
   display: grid; 
-  grid-template-columns: 1fr 1fr 1fr 1fr; 
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); 
   gap: 12px; 
 }
 
@@ -649,16 +674,28 @@ body {
   transition: 0.2s; 
 }
 
-.setup-btn.host-btn { background: var(--green); border-color: var(--green); }
+.setup-btn.host-btn { 
+  background: var(--green); 
+  border-color: var(--green); 
+}
 .setup-btn.host-btn:hover { filter: brightness(1.2); }
 
-.setup-btn.host-btn-trio { background: #0969da; border-color: #0969da; }
+.setup-btn.host-btn-trio { 
+  background: #0969da; 
+  border-color: #0969da; 
+}
 .setup-btn.host-btn-trio:hover { filter: brightness(1.2); }
 
-.setup-btn.host-btn-quad { background: #a371f7; border-color: #a371f7; }
+.setup-btn.host-btn-quad { 
+  background: var(--purple); 
+  border-color: var(--purple); 
+}
 .setup-btn.host-btn-quad:hover { filter: brightness(1.2); }
 
-.setup-btn.join-btn { background: var(--gold); border-color: var(--gold); }
+.setup-btn.join-btn { 
+  background: var(--gold); 
+  border-color: var(--gold); 
+}
 .setup-btn.join-btn:hover { filter: brightness(1.2); }
 
 /* ==================== 初始页面系统面板 ==================== */
@@ -720,7 +757,10 @@ body {
   padding-right: 10px; 
 }
 
-.log-content::-webkit-scrollbar { width: 4px; }
+.log-content::-webkit-scrollbar { 
+  width: 4px; 
+}
+
 .log-content::-webkit-scrollbar-thumb { 
   background: var(--border); 
   border-radius: 10px; 
@@ -748,4 +788,6 @@ body {
   padding: 0; 
 }
 
-.log-item li { margin-bottom: 4px; }
+.log-item li { 
+  margin-bottom: 4px; 
+}
