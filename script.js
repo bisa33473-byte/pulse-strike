@@ -12,6 +12,7 @@ const db = firebase.database();
 
 let myRole = null, roomRef = null, currentRoomId = "", isPvE = false;
 let gameState = null, gameVersion = 'stable', isProcessing = false; 
+let isRerollingGlobal = false; // 记录当前是否是重铸环节
 
 // ==================== 用户认证与缓存 ====================
 let currentUser = { uid: "", username: "", title: "初阶特工", stats: { total: 0, wins: 0 }, friends: {} };
@@ -160,7 +161,7 @@ function renderFriendsList() {
   const fList = document.getElementById('friends-list');
   fList.innerHTML = "<div style='color:#8b949e; text-align:center; font-size:0.85em;'>正在连接全网...</div>";
   if (!currentUser.friends || Object.keys(currentUser.friends).length === 0) {
-    fList.innerHTML = "<p style='color:#8b949e; text-align:center; font-size:0.85em;'>暂无好友。</p>"; return;
+    fList.innerHTML = "<p style='color:#8b949e; text-align:center; font-size:0.85em;'>暂无已连接好友。</p>"; return;
   }
   db.ref('users').once('value', function(snap) {
     const allUsers = snap.val() || {}; fList.innerHTML = "";
@@ -181,56 +182,30 @@ function renderFriendsList() {
   });
 }
 
-// 核心修复1：给邀请绑定当前的游戏版本号
 function sendRoomInvite(friendUid) {
   if (!currentRoomId) return;
-  db.ref('invites/' + friendUid).set({ 
-    roomId: currentRoomId, 
-    hostName: currentUser.username, 
-    version: gameVersion, // 把房主的版本号发送过去
-    timestamp: Date.now() 
-  }).then(function() { alert("邀请已发送！"); });
+  db.ref('invites/' + friendUid).set({ roomId: currentRoomId, hostName: currentUser.username, version: gameVersion, timestamp: Date.now() }).then(function() { alert("邀请已发送！"); });
 }
 
-// 核心修复2：受邀者接收邀请时，把版本号藏进数据集里
 function listenToInvites() {
   db.ref('invites/' + currentUser.uid).on('value', function(snap) {
     const data = snap.val(); if (!data) return;
     if (Date.now() - data.timestamp > 60000) { db.ref('invites/' + currentUser.uid).remove(); return; }
-
     document.getElementById('invite-alert-text').innerHTML = `⚠️ <b>${data.hostName}</b> 邀请加入 <span style="color:var(--gold); font-family:monospace; font-size:1.2em;">${data.roomId}</span>`;
-
     const alertBox = document.getElementById('global-invite-alert');
-    alertBox.style.display = 'flex'; 
-    alertBox.dataset.targetRoom = data.roomId;
-    alertBox.dataset.targetVersion = data.version || 'stable'; // 提取版本号
+    alertBox.style.display = 'flex'; alertBox.dataset.targetRoom = data.roomId; alertBox.dataset.targetVersion = data.version || 'stable';
   });
 }
 
-// 核心修复3：受邀者接受邀请时，强行同步版本，并直接调用安全入房逻辑
 function acceptInvite() {
   const alertBox = document.getElementById('global-invite-alert');
-  const roomId = alertBox.dataset.targetRoom;
-  const targetVer = alertBox.dataset.targetVersion || 'stable';
-
-  alertBox.style.display = 'none'; 
-  db.ref('invites/' + currentUser.uid).remove();
-
-  if (roomRef) roomRef.off(); 
-
-  // 强制同步房主的版本！！！
-  gameVersion = targetVer;
-
+  const roomId = alertBox.dataset.targetRoom; const targetVer = alertBox.dataset.targetVersion || 'stable';
+  alertBox.style.display = 'none'; db.ref('invites/' + currentUser.uid).remove();
+  if (roomRef) roomRef.off(); gameVersion = targetVer;
   document.getElementById('roomInput').value = roomId;
-  document.getElementById('hub-overlay').style.display = 'none'; 
-  document.getElementById('friends-modal').style.display = 'none'; 
-  document.getElementById('mode-overlay').style.display = 'block';
-  selectMode('pvp'); 
-
-  // 直接无异步调用直连函数，避免等待 UI 导致的 DOM 未加载问题
-  joinRoomWithId(roomId);
+  document.getElementById('hub-overlay').style.display = 'none'; document.getElementById('friends-modal').style.display = 'none'; document.getElementById('mode-overlay').style.display = 'block';
+  selectMode('pvp'); joinRoomWithId(roomId);
 }
-
 function declineInvite() { document.getElementById('global-invite-alert').style.display = 'none'; db.ref('invites/' + currentUser.uid).remove(); }
 
 // ==================== 排行榜 ====================
@@ -272,13 +247,12 @@ function getInitialState(capacity) {
   return state;
 }
 function createBasePlayer(currentHp, maxHp, maxAmmo, maxShield) {
-  return { uid: "", username: "", title: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", talent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, rerolled: false };
+  return { uid: "", username: "", title: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", talent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, rerolled: false, reviveCount: 0 };
 }
 
+// 新版机缘池：已删除 n_a1, n_a2，新增 m_a5
 const TALENT_POOL = {
   numerical: [
-    { id: 'n_a1', type: 'angel', category: '数值', name: '战术储备', desc: '护盾 +2，弹药 -1' },
-    { id: 'n_a2', type: 'angel', category: '数值', name: '轻装上阵', desc: '初始弹药 +1，护盾 +1，血量与上限 -1' },
     { id: 'n_d1', type: 'demon', category: '数值', name: '军火狂人', desc: '弹药 +4，血量与上限 -3\n代价：第一回合绝对禁止射击。' },
     { id: 'n_d2', type: 'demon', category: '数值', name: '叹息之墙', desc: '护盾 +3，血量与上限 -3\n代价：容错极低的防御型，考验身法。' }
   ],
@@ -287,6 +261,7 @@ const TALENT_POOL = {
     { id: 'm_a2', type: 'angel', category: '机制', name: '圣戒', desc: '专属动作【圣光】(每5回合可用)：无视防御，强行抽取目标1血量反哺自身。\n代价：本局游戏彻底丧失【包扎】能力。' },
     { id: 'm_a3', type: 'angel', category: '机制', name: '神圣复苏', desc: '回合末，若本回合未受伤害且未射击，恢复 1 点血。\n(触发后进入 2 回合冷却)' },
     { id: 'm_a4', type: 'angel', category: '机制', name: '双向渡灵', desc: '专属动作【渡灵】(每4回合可用)：无消耗。50%概率恢复自身1血，50%概率随机给一名存活敌人恢复1血。' },
+    { id: 'm_a5', type: 'angel', category: '机制', name: '归光·还魂', desc: '致命伤时复活1次(冷却50回合)。\n代价：进入游戏后，最大血盾弹均-2，清空当前弹盾。第二次复活后，所有上限强制降为1，并清空当前弹盾。' },
     { id: 'm_d1', type: 'demon', category: '机制', name: '深渊魔弹', desc: '你的射击必定穿甲（无视护盾直接扣血）。\n代价：你永久无法使用防御动作。' },
     { id: 'm_d2', type: 'demon', category: '机制', name: '嗜血狂热', desc: '装弹时流失 1 血量，但获得 3 发子弹。\n(触发后 2 回合内只能普通装弹；1血时触发濒死保护停止扣血)' },
     { id: 'm_d3', type: 'demon', category: '机制', name: '贪婪吞噬', desc: '射击若对目标造成掉血，吸取 1 点生命。\n(触发后进入 2 回合冷却) 代价：血量上限 -2，护盾上限固定为 2。' },
@@ -301,11 +276,11 @@ function toggleRules(show) { document.getElementById('rules-modal').style.displa
 function showTalentCodex() {
   const container = document.getElementById('codex-list-container'); container.innerHTML = "";
   let htmlStr = `<h3 style="color: var(--green); border-bottom: 1px solid #30363d; padding-bottom: 5px;">👼 天使机缘</h3>`;
-  for (let i = 0; i < TALENT_POOL.numerical.length; i++) { if (TALENT_POOL.numerical[i].type === 'angel') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.numerical[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(数值)</span><br><span style="font-size:0.9em; color:#c9d1d9;">${TALENT_POOL.numerical[i].desc}</span></div>`; }
-  for (let i = 0; i < TALENT_POOL.mechanism.length; i++) { if (TALENT_POOL.mechanism[i].type === 'angel') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.mechanism[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(机制)</span><br><span style="font-size:0.9em; color:#c9d1d9;">${TALENT_POOL.mechanism[i].desc}</span></div>`; }
+  for (let i = 0; i < TALENT_POOL.numerical.length; i++) { if (TALENT_POOL.numerical[i].type === 'angel') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.numerical[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(数值)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.numerical[i].desc}</span></div>`; }
+  for (let i = 0; i < TALENT_POOL.mechanism.length; i++) { if (TALENT_POOL.mechanism[i].type === 'angel') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.mechanism[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(机制)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.mechanism[i].desc}</span></div>`; }
   htmlStr += `<h3 style="color: var(--purple); border-bottom: 1px solid #30363d; padding-bottom: 5px; margin-top: 25px;">😈 恶魔机缘</h3>`;
-  for (let i = 0; i < TALENT_POOL.numerical.length; i++) { if (TALENT_POOL.numerical[i].type === 'demon') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.numerical[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(数值)</span><br><span style="font-size:0.9em; color:#c9d1d9;">${TALENT_POOL.numerical[i].desc.replace(/\n/g, '<br>')}</span></div>`; }
-  for (let i = 0; i < TALENT_POOL.mechanism.length; i++) { if (TALENT_POOL.mechanism[i].type === 'demon') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.mechanism[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(机制)</span><br><span style="font-size:0.9em; color:#c9d1d9;">${TALENT_POOL.mechanism[i].desc.replace(/\n/g, '<br>')}</span></div>`; }
+  for (let i = 0; i < TALENT_POOL.numerical.length; i++) { if (TALENT_POOL.numerical[i].type === 'demon') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.numerical[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(数值)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.numerical[i].desc}</span></div>`; }
+  for (let i = 0; i < TALENT_POOL.mechanism.length; i++) { if (TALENT_POOL.mechanism[i].type === 'demon') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.mechanism[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(机制)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.mechanism[i].desc}</span></div>`; }
   container.innerHTML = htmlStr; document.getElementById('codex-modal').style.display = 'flex';
 }
 function exitGame() { 
@@ -329,7 +304,7 @@ function selectMode(mode) {
     gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title;
     gameState.p2.uid = "000000"; gameState.p2.username = "COMPUTER (AI)"; gameState.p2.title = "机械领主";
     gameState.status = 'playing'; gameState.p1.joined = true; gameState.p1.ready = true; gameState.p2.joined = true; gameState.p2.ready = true;
-    if (gameVersion === 'beta') showTalentSelection(false); else render(gameState);
+    if (gameVersion === 'beta') triggerPrayerPhase(false); else render(gameState);
   } else { document.getElementById('room-setup').style.display = 'flex'; }
 }
 
@@ -343,16 +318,12 @@ function createRoom(capacity) {
   roomRef.set(newRoom); roomRef.onDisconnect().remove(); setupRoomListener(rid);
 }
 
-// 核心修复4：重构加入逻辑，支持直接传参强制跳转
 function joinRoomWithId(explicitId) {
   const rid = explicitId.toUpperCase().trim();
   const dbPath = gameVersion === 'beta' ? "rooms_beta/" : "rooms_v2/";
   const tempRef = db.ref(dbPath + rid);
-
   tempRef.once('value', function(snap) {
-    let data = snap.val(); 
-    if (!data) return alert("❌ 房间不存在！(检查游戏版本或房间码)");
-
+    let data = snap.val(); if (!data) return alert("❌ 房间不存在！(检查版本或房间码)");
     const cap = data.config.capacity; let isAssigned = false;
     if (data.status === 'playing' || data.status === 'finished') {
       if (cap >= 2 && !data.p2.joined && data.p2.hp > 0) { myRole = 'p2'; isAssigned = true; }
@@ -363,7 +334,6 @@ function joinRoomWithId(explicitId) {
       else if (cap >= 3 && !data.p3.joined) { myRole = 'p3'; isAssigned = true; }
       else if (cap === 4 && !data.p4.joined) { myRole = 'p4'; isAssigned = true; }
     }
-
     if (!isAssigned) { myRole = 'spectator'; alert("房间满，进入观战！"); }
     currentRoomId = rid; roomRef = tempRef; document.getElementById('room-setup').style.display = 'none';
     if (myRole !== 'spectator') {
@@ -373,13 +343,10 @@ function joinRoomWithId(explicitId) {
     setupRoomListener(rid);
   });
 }
-
 function joinRoom() {
-  const ridInput = document.getElementById('roomInput').value;
-  if (!ridInput) return alert("请输入房间码！");
+  const ridInput = document.getElementById('roomInput').value; if (!ridInput) return alert("请输入房间码！");
   joinRoomWithId(ridInput);
 }
-
 function setupRoomListener(rid) {
   roomRef.on('value', function(snap) {
     let data = snap.val(); if (!data) { alert("房间解散。"); location.reload(); return; }
@@ -388,7 +355,6 @@ function setupRoomListener(rid) {
     else { document.getElementById('waiting-room').style.display = 'none'; document.getElementById('game-container').style.display = 'block'; render(gameState); checkRoundStart(); }
   });
 }
-
 function renderLobby(rid) {
   document.getElementById('game-container').style.display = 'none'; document.getElementById('waiting-room').style.display = 'block'; document.getElementById('lobby-rid').innerText = rid;
   document.getElementById('spectator-banner-lobby').style.display = myRole === 'spectator' ? 'block' : 'none';
@@ -401,7 +367,7 @@ function renderLobby(rid) {
     if (myData && myData.ready) { actionBtn.innerText = "等待玩家..."; actionBtn.style.opacity = 0.5; actionBtn.onclick = null; } 
     else {
       actionBtn.style.opacity = 1;
-      if (gameVersion === 'beta') { actionBtn.innerText = "抽取机缘"; actionBtn.onclick = function() { showTalentSelection(false); }; } 
+      if (gameVersion === 'beta') { actionBtn.innerText = "命运祈祷"; actionBtn.onclick = function() { triggerPrayerPhase(false); }; } 
       else { actionBtn.innerText = "准备就绪"; actionBtn.onclick = function() { if (roomRef) roomRef.child(myRole).update({ ready: true }); }; }
     }
   }
@@ -429,41 +395,70 @@ function updateLobbyPlayer(playerId, pData, isActive) {
   else { statusEl.innerText = "已准备就绪！"; statusEl.style.color = "#3fb950"; if(cardEl) cardEl.style.borderColor = "#3fb950"; }
 }
 
-// ==================== 天赋分配与安全撤销 ====================
-function showTalentSelection(isReroll) {
+// ==================== 祈祷与天赋分配系统 ====================
+function triggerPrayerPhase(isReroll) {
+  isRerollingGlobal = isReroll;
+  document.getElementById('prayer-overlay').style.display = 'flex';
+  document.getElementById('prayer-keep-btn').style.display = isReroll ? 'inline-block' : 'none';
+  if (isReroll) {
+    document.getElementById('prayer-title-text').innerText = "🙏 机缘重铸 (第80回合)";
+    document.getElementById('prayer-subtitle-text').innerText = "命运之轮再次转动，请选择祈祷方向，或直接保留当前机缘。";
+  } else {
+    document.getElementById('prayer-title-text').innerText = "🙏 命运祈祷";
+    document.getElementById('prayer-subtitle-text').innerText = "万物皆有回响，请选择你的信仰，大幅提升该阵营降临概率。";
+  }
+}
+
+function confirmPrayer(bias) {
+  document.getElementById('prayer-overlay').style.display = 'none';
+  if (bias === 'keep') { applyTalent('keep', isRerollingGlobal); return; }
+  showTalentSelection(isRerollingGlobal, bias);
+}
+
+function showTalentSelection(isReroll, bias) {
   const overlay = document.getElementById('talent-overlay'); const list = document.getElementById('talent-list');
   const title = document.getElementById('talent-title-text'); const subtitle = document.getElementById('talent-subtitle-text');
-  if (isReroll) { title.innerText = "✨ 机缘重铸 (第80回合) ✨"; subtitle.innerText = "命运之轮再次转动，请重新抉择。"; } 
-  else { title.innerText = "✨ 获取机缘 ✨"; subtitle.innerText = "请选择一项作为本局核心"; }
+  if (isReroll) { title.innerText = "✨ 降临机缘 (重铸) ✨"; subtitle.innerText = "祈祷已获回应，请选择一项作为核心"; } 
+  else { title.innerText = "✨ 降临机缘 ✨"; subtitle.innerText = "祈祷已获回应，请选择一项作为核心"; }
   overlay.style.display = 'flex'; list.innerHTML = '';
+
+  // 建立加权抽取池
+  const weightedPool = [];
+  const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
+  for (let i = 0; i < allItems.length; i++) {
+    let weight = 1;
+    if (bias === 'angel' && allItems[i].type === 'angel') weight = 3;
+    if (bias === 'demon' && allItems[i].type === 'demon') weight = 3;
+    for (let w = 0; w < weight; w++) weightedPool.push(allItems[i]);
+  }
+
   let options = [];
-  options.push(TALENT_POOL.numerical[Math.floor(Math.random() * TALENT_POOL.numerical.length)]);
-  options.push(TALENT_POOL.mechanism[Math.floor(Math.random() * TALENT_POOL.mechanism.length)]);
-  const combinedPool = [];
-  for (let i=0; i<TALENT_POOL.numerical.length; i++) combinedPool.push(TALENT_POOL.numerical[i]);
-  for (let i=0; i<TALENT_POOL.mechanism.length; i++) combinedPool.push(TALENT_POOL.mechanism[i]);
   while (options.length < 4) {
-    const pick = combinedPool[Math.floor(Math.random() * combinedPool.length)];
-    let exists = false; for (let i = 0; i < options.length; i++) { if (options[i].id === pick.id) { exists = true; break; } }
+    const pick = weightedPool[Math.floor(Math.random() * weightedPool.length)];
+    let exists = false; for (let j = 0; j < options.length; j++) { if (options[j].id === pick.id) { exists = true; break; } }
     if (!exists) options.push(pick);
   }
+
   for (let i = 0; i < options.length; i++) {
     let t = options[i]; const card = document.createElement('div'); card.className = `talent-card ${t.type}`;
     card.innerHTML = `<h4>${t.name}</h4><small>${t.category}类</small><p>${t.desc}</p>`; card.onclick = function() { applyTalent(t, isReroll); }; list.appendChild(card);
   }
-  if (isReroll) {
-    const keepCard = document.createElement('div'); keepCard.className = `talent-card`; keepCard.style.borderBottom = "4px solid #8b949e"; keepCard.style.gridColumn = "1 / -1";
-    keepCard.innerHTML = `<h4 style="color:#8b949e;">保留原机缘</h4><p>放弃重铸，维持当前天赋不变。</p>`; keepCard.onclick = function() { applyTalent('keep', isReroll); }; list.appendChild(keepCard);
-  }
 }
+
 function removeTalentMods(playerData, t, config) {
   if (!t) return;
-  if (t.id === 'n_a1') { playerData.shield -= 2; playerData.ammo += 1; } 
-  else if (t.id === 'n_a2') { playerData.ammo -= 1; playerData.shield -= 1; playerData.maxHp += 1; playerData.hp += 1; } 
-  else if (t.id === 'n_d1') { playerData.ammo -= 4; playerData.maxHp += 3; playerData.hp += 3; } 
+  // 此处已删除轻装上阵等旧代码，新增 m_a5 回退
+  if (t.id === 'n_d1') { playerData.ammo -= 4; playerData.maxHp += 3; playerData.hp += 3; } 
   else if (t.id === 'n_d2') { playerData.shield += 3; playerData.maxHp += 3; playerData.hp += 3; } 
   else if (t.id === 'm_d3') {
     playerData.maxHp += 2; playerData.hp += 2; playerData.maxShield = config.maxShield;
+    if (gameState && gameState.round >= 120) {
+      playerData.maxShield -= 2; if (playerData.maxShield < 0) playerData.maxShield = 0;
+      playerData.maxHp -= 2; if (playerData.maxHp < 1) playerData.maxHp = 1;
+    }
+  } else if (t.id === 'm_a5') {
+    // 撤销归光·还魂：恢复为配置基础值，并考虑120回合衰竭
+    playerData.maxHp = config.baseHp; playerData.maxAmmo = config.maxAmmo; playerData.maxShield = config.maxShield;
     if (gameState && gameState.round >= 120) {
       playerData.maxShield -= 2; if (playerData.maxShield < 0) playerData.maxShield = 0;
       playerData.maxHp -= 2; if (playerData.maxHp < 1) playerData.maxHp = 1;
@@ -473,14 +468,22 @@ function removeTalentMods(playerData, t, config) {
   if (playerData.ammo > playerData.maxAmmo) playerData.ammo = playerData.maxAmmo;
   if (playerData.shield > playerData.maxShield) playerData.shield = playerData.maxShield;
 }
+
 function applyTalentMods(playerData, t) {
   if (!t) return;
-  if (t.id === 'n_a1') { playerData.shield += 2; playerData.ammo -= 1; } 
-  else if (t.id === 'n_a2') { playerData.ammo += 1; playerData.shield += 1; playerData.maxHp -= 1; playerData.hp -= 1; } 
-  else if (t.id === 'n_d1') { playerData.ammo += 4; playerData.maxHp -= 3; playerData.hp -= 3; } 
+  if (t.id === 'n_d1') { playerData.ammo += 4; playerData.maxHp -= 3; playerData.hp -= 3; } 
   else if (t.id === 'n_d2') { playerData.shield += 3; playerData.maxHp -= 3; playerData.hp -= 3; } 
   else if (t.id === 'm_d3') { playerData.maxHp -= 2; playerData.hp -= 2; playerData.maxShield = 2; if (playerData.shield > 2) playerData.shield = 2; }
+  else if (t.id === 'm_a5') {
+    playerData.maxHp -= 2; playerData.maxAmmo -= 2; playerData.maxShield -= 2;
+    if (playerData.maxHp < 1) playerData.maxHp = 1;
+    if (playerData.maxAmmo < 1) playerData.maxAmmo = 1;
+    if (playerData.maxShield < 0) playerData.maxShield = 0;
+    if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
+    playerData.ammo = 0; playerData.shield = 0; playerData.reviveCount = 0;
+  }
 }
+
 function applyTalent(t, isReroll) {
   document.getElementById('talent-overlay').style.display = 'none';
   if (isPvE) {
@@ -490,10 +493,13 @@ function applyTalent(t, isReroll) {
       if (gameState.p2.hp > 0) {
         if (Math.random() > 0.2) {
           removeTalentMods(gameState.p2, gameState.p2.talent, gameState.config);
-          const combinedPool = [];
-          for (let i=0; i<TALENT_POOL.numerical.length; i++) combinedPool.push(TALENT_POOL.numerical[i]);
-          for (let i=0; i<TALENT_POOL.mechanism.length; i++) combinedPool.push(TALENT_POOL.mechanism[i]);
-          const aiT = combinedPool[Math.floor(Math.random() * combinedPool.length)];
+          const aiBias = ['angel', 'demon'][Math.floor(Math.random()*2)];
+          const weightedPool = []; const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
+          for (let i = 0; i < allItems.length; i++) {
+            let weight = 1; if (aiBias === 'angel' && allItems[i].type === 'angel') weight = 3; if (aiBias === 'demon' && allItems[i].type === 'demon') weight = 3;
+            for (let w = 0; w < weight; w++) weightedPool.push(allItems[i]);
+          }
+          const aiT = weightedPool[Math.floor(Math.random() * weightedPool.length)];
           gameState.p2.talent = aiT; applyTalentMods(gameState.p2, aiT);
         }
         gameState.p2.rerolled = true;
@@ -501,10 +507,8 @@ function applyTalent(t, isReroll) {
       render(gameState); checkRoundStart(); 
     } else {
       gameState.p1.talent = t; applyTalentMods(gameState.p1, t);
-      const combinedPool = [];
-      for (let i=0; i<TALENT_POOL.numerical.length; i++) combinedPool.push(TALENT_POOL.numerical[i]);
-      for (let i=0; i<TALENT_POOL.mechanism.length; i++) combinedPool.push(TALENT_POOL.mechanism[i]);
-      const aiT = combinedPool[Math.floor(Math.random() * combinedPool.length)];
+      const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
+      const aiT = allItems[Math.floor(Math.random() * allItems.length)];
       gameState.p2.talent = aiT; applyTalentMods(gameState.p2, aiT);
       render(gameState); 
     }
@@ -800,6 +804,24 @@ function processRound() {
     delete player.tookDamage; 
   }
 
+  // 归光·还魂(m_a5) 濒死复活判定
+  for (let i = 0; i < allKeys.length; i++) {
+    const p = allKeys[i];
+    if (data[p] && data[p].joined && data[p].hp <= 0 && data[p].talent && data[p].talent.id === 'm_a5' && data[p].talentCd === 0) {
+      data[p].reviveCount = (data[p].reviveCount || 0) + 1;
+      if (data[p].reviveCount === 1) {
+        data[p].hp = data[p].maxHp;
+        data[p].talentCd = 51; // 回合末减1，即50回合CD
+        logs.push(`<span class="log-safe">👼 ${data[p].username || p.toUpperCase()} 触发【归光·还魂】，绝境逢生，满血复活！</span>`);
+      } else {
+        data[p].maxHp = 1; data[p].maxAmmo = 1; data[p].maxShield = 1;
+        data[p].hp = 1; data[p].ammo = 0; data[p].shield = 0;
+        data[p].talentCd = 51;
+        logs.push(`<span class="log-safe">👼 ${data[p].username || p.toUpperCase()} 再次触发【归光·还魂】！身躯残破，所有上限被强制封锁为1！</span>`);
+      }
+    }
+  }
+
   let battleResult = logs.length > 0 ? logs.join('<br>') : '<span style="color:#8b949e">双方试探，未爆发冲突</span>';
   data.log = `<div class="action-header">${actionHeader}</div><div class="result-body" style="margin-top:10px;">${battleResult}</div>`;
 
@@ -883,8 +905,9 @@ function render(data) {
 
   if (data.status === 'playing' && data.round === 80) {
     if (myRole && myRole !== 'spectator' && data[myRole] && data[myRole].hp > 0 && !data[myRole].rerolled) {
-      const overlay = document.getElementById('talent-overlay');
-      if (overlay && overlay.style.display !== 'flex') showTalentSelection(true);
+      const prayerOverlay = document.getElementById('prayer-overlay');
+      const talentOverlay = document.getElementById('talent-overlay');
+      if (prayerOverlay && prayerOverlay.style.display !== 'flex' && talentOverlay.style.display !== 'flex') triggerPrayerPhase(true);
     }
   }
 
@@ -966,13 +989,16 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
     if (pData.hp > 0 && fullData.status === 'playing') newTurnStatusEl.innerHTML = (pData.move !== "") ? `<span style="color: #3fb950;">(✅ 已出招)</span>` : `<span style="color: #d29922;">(🤔 思考中...)</span>`;
     else newTurnStatusEl.innerHTML = ''; 
   }
+
   if (talentEl) {
     if (pData.talent) {
       let cdText = "";
       if (pData.talent.id === 'm_a2' && pData.holyCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.holyCd})</span>`;
       else if (pData.talent.id === 'm_a4' && pData.dualCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.dualCd})</span>`;
       else if (pData.talent.id === 'm_d4' && pData.fatalCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.fatalCd})</span>`;
+      else if (pData.talent.id === 'm_a5' && pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
       else if (pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
+
       talentEl.innerHTML = `◈ ${pData.talent.name}${cdText} <span style="opacity:0.8; font-size:1.1em; cursor:pointer;">ℹ️</span>`;
       talentEl.style.display = 'inline-block'; talentEl.onclick = function() { showTalentDetail(pData.talent); };
     } else { talentEl.innerText = "无天赋"; talentEl.style.display = 'none'; talentEl.onclick = null; }
@@ -980,7 +1006,7 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
 
   if (pData.hp <= 0) {
     if (cardEl) { cardEl.style.opacity = '0.3'; cardEl.style.filter = 'grayscale(1)'; }
-    if (tsRadio) tsRadio.style.display = 'none';
+    if (tsRadio) { tsRadio.style.display = 'none'; }
   } else {
     if (cardEl) { cardEl.style.opacity = '1'; cardEl.style.filter = 'none'; }
     if (tsRadio) {
@@ -995,7 +1021,10 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
     else if (pData.hp >= Math.ceil(pData.maxHp * 0.3)) hpEl.style.color = "#d29922";
     else hpEl.style.color = "#f85149";
   }
-  if (ammoEl) { ammoEl.innerText = `${pData.ammo}/${pData.maxAmmo}`; if (pData.ammo > 0) ammoEl.style.color = "#d29922"; else if (pData.ammo === 0) ammoEl.style.color = "#c9d1d9"; else ammoEl.style.color = "#f85149"; }
+  if (ammoEl) {
+    ammoEl.innerText = `${pData.ammo}/${pData.maxAmmo}`;
+    if (pData.ammo > 0) ammoEl.style.color = "#d29922"; else if (pData.ammo === 0) ammoEl.style.color = "#c9d1d9"; else ammoEl.style.color = "#f85149"; 
+  }
   if (shieldEl) { shieldEl.innerText = `${pData.shield}/${pData.maxShield}`; shieldEl.style.color = "#58a6ff"; }
 }
 
@@ -1006,7 +1035,9 @@ function updateActionPanel(data) {
   if (myRole === 'spectator') { if (panelContainer) panelContainer.style.display = 'none'; return; } 
   else { if (panelContainer) panelContainer.style.display = 'block'; }
 
-  if (targetSelector) { if (cap === 2) targetSelector.style.display = 'none'; else targetSelector.style.display = 'flex'; }
+  if (targetSelector) {
+    if (cap === 2) targetSelector.style.display = 'none'; else targetSelector.style.display = 'flex';
+  }
 
   const shootControls = document.getElementById('shoot-controls'); const fatalShootBtns = document.getElementById('fatal-shoot-btns');
 
@@ -1016,8 +1047,8 @@ function updateActionPanel(data) {
         htmlStr += `<button class="s-btn" id="btn-s${i}" onclick="handleInput('shoot', ${i})">${i}</button>`;
         fatalStr += `<button class="s-btn" id="btn-f${i}" onclick="handleInput('fatal_shoot', ${i})" style="background:var(--purple);">${i}</button>`;
      }
-     if (shootControls) shootControls.innerHTML = htmlStr; 
-     if (fatalShootBtns) fatalShootBtns.innerHTML = fatalStr; 
+     if (shootControls) { shootControls.innerHTML = htmlStr; }
+     if (fatalShootBtns) { fatalShootBtns.innerHTML = fatalStr; }
   }
 
   if (myRole && data[myRole] && data[myRole].hp > 0 && data.status === 'playing') {
@@ -1030,7 +1061,7 @@ function updateActionPanel(data) {
 
        if (!allRerolled) {
           if (actionControls) actionControls.style.display = 'none';
-          if (actionWaiting) { actionWaiting.style.display = 'block'; actionWaiting.innerHTML = '<div class="spinner">⏳</div><p>命运重铸中，等待全员抉择...</p>'; }
+          if (actionWaiting) { actionWaiting.style.display = 'block'; actionWaiting.innerHTML = '<div class="spinner">⏳</div><p>命运祈祷与重铸中，等待全员抉择...</p>'; }
           return;
        }
     }
@@ -1038,11 +1069,11 @@ function updateActionPanel(data) {
     if (actionWaiting) actionWaiting.innerHTML = '<div class="spinner">⏳</div><p id="action-waiting-text">指令已安全锁定，正在等待其他玩家深思熟虑...</p>';
 
     if (data[myRole].move !== "") {
-      if (actionControls) actionControls.style.display = 'none';
-      if (actionWaiting) actionWaiting.style.display = 'block';
+      if (actionControls) { actionControls.style.display = 'none'; }
+      if (actionWaiting) { actionWaiting.style.display = 'block'; }
     } else {
-      if (actionControls) actionControls.style.display = 'block';
-      if (actionWaiting) actionWaiting.style.display = 'none';
+      if (actionControls) { actionControls.style.display = 'block'; }
+      if (actionWaiting) { actionWaiting.style.display = 'none'; }
 
       const myAmmo = data[myRole].ammo; const myTalent = data[myRole].talent; const maxA = data[myRole].maxAmmo;
 
@@ -1052,21 +1083,21 @@ function updateActionPanel(data) {
         if (i > myAmmo) disabled = true;
         if (myTalent && myTalent.id === 'm_a1' && i > 2) disabled = true;
         if (myTalent && myTalent.id === 'n_d1' && data.round === 1) disabled = true;
-        if (disabled) btn.classList.add('disabled'); else btn.classList.remove('disabled');
+        if (disabled) { btn.classList.add('disabled'); } else { btn.classList.remove('disabled'); }
       }
 
       const fatalRow = document.getElementById('fatal-shoot-controls'); const fatalLabel = document.getElementById('fatal-shoot-label');
       if (fatalRow) {
         if (myTalent && myTalent.id === 'm_d4') {
           fatalRow.style.display = 'flex'; let globalFatalDisabled = false;
-          if (data[myRole].fatalCd > 0) { globalFatalDisabled = true; if(fatalLabel) fatalLabel.innerText = `狂击(CD:${data[myRole].fatalCd}):`; } 
-          else { if(fatalLabel) fatalLabel.innerText = `蚀命狂击:`; }
+          if (data[myRole].fatalCd > 0) { globalFatalDisabled = true; if(fatalLabel) { fatalLabel.innerText = `狂击(CD:${data[myRole].fatalCd}):`; } } 
+          else { if(fatalLabel) { fatalLabel.innerText = `蚀命狂击:`; } }
           for (let i = 1; i <= maxA; i++) {
             const btnF = document.getElementById(`btn-f${i}`); if (!btnF) continue;
             let disabled = globalFatalDisabled; if (i > myAmmo) disabled = true;
-            if (disabled) btnF.classList.add('disabled'); else btnF.classList.remove('disabled');
+            if (disabled) { btnF.classList.add('disabled'); } else { btnF.classList.remove('disabled'); }
           }
-        } else fatalRow.style.display = 'none';
+        } else { fatalRow.style.display = 'none'; }
       }
 
       const healBtn = document.querySelector('.t-heal');
@@ -1084,7 +1115,7 @@ function updateActionPanel(data) {
           holyBtn.style.display = 'inline-block';
           if (data[myRole].holyCd > 0) { holyBtn.classList.add('disabled'); holyBtn.innerText = `圣光 (CD:${data[myRole].holyCd})`; } 
           else { holyBtn.classList.remove('disabled'); holyBtn.innerText = `圣光`; }
-        } else holyBtn.style.display = 'none';
+        } else { holyBtn.style.display = 'none'; }
       }
 
       const dualBtn = document.getElementById('btn-dual');
@@ -1093,11 +1124,11 @@ function updateActionPanel(data) {
           dualBtn.style.display = 'inline-block';
           if (data[myRole].dualCd > 0) { dualBtn.classList.add('disabled'); dualBtn.innerText = `渡灵 (CD:${data[myRole].dualCd})`; } 
           else { dualBtn.classList.remove('disabled'); dualBtn.innerText = `渡灵`; }
-        } else dualBtn.style.display = 'none';
+        } else { dualBtn.style.display = 'none'; }
       }
     }
   } else {
-    if (actionControls) actionControls.style.display = 'none';
-    if (actionWaiting) actionWaiting.style.display = 'none';
+    if (actionControls) { actionControls.style.display = 'none'; }
+    if (actionWaiting) { actionWaiting.style.display = 'none'; }
   }
 }

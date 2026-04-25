@@ -29,6 +29,7 @@ body {
 #auth-overlay,
 #hub-overlay,
 #mode-overlay, 
+#prayer-overlay,
 #talent-overlay, 
 #talent-detail-modal, 
 #rules-modal, 
@@ -53,6 +54,7 @@ body {
 #auth-box,
 #hub-box,
 #mode-select-box, 
+#prayer-box,
 #talent-box { 
   background: var(--panel); 
   padding: 30px; 
@@ -66,7 +68,7 @@ body {
   text-align: center;
 }
 
-#talent-box { background: transparent; border: none; box-shadow: none; max-width: 500px; }
+#talent-box, #prayer-box { background: transparent; border: none; box-shadow: none; max-width: 500px; }
 .codex-content { max-width: 500px; }
 
 /* ==================== 按钮与输入框 ==================== */
@@ -77,7 +79,7 @@ body {
 .mode-pvp { background: #d16d10; }
 .info-btn { background: transparent; border: 1px solid var(--blue); color: var(--blue); }
 .mode-btn:hover { transform: translateY(-2px); filter: brightness(1.2); }
-.back-link { background: transparent; color: #8b949e; border: none; cursor: pointer; margin-top: 15px; text-decoration: underline; width: 100%; }
+.back-link { background: transparent; color: #8b949e; border: none; cursor: pointer; margin-top: 15px; text-decoration: underline; width: 100%; display: inline-block;}
 
 .cyber-input {
   width: 100%; background: #0d1117; border: 1px solid var(--border); color: white; 
@@ -240,11 +242,11 @@ body {
 /* ==================== 手机端屏幕专属适配 ==================== */
 @media screen and (max-width: 768px) {
   body { padding: 10px; }
-  .modal-content, #auth-box, #hub-box, #mode-select-box, #talent-box, .codex-content { width: 95%; padding: 20px; }
+  .modal-content, #auth-box, #hub-box, #mode-select-box, #prayer-box, #talent-box, .codex-content { width: 95%; padding: 20px; }
 
   .main-title { font-size: 2.2em; }
 
-  /* 4人联机变成 2x2 网格，拒绝一长条滑动 */
+  /* 4人联机变成 2x2 网格 */
   .lobby-card, .player-card { min-width: 45%; padding: 12px; margin-bottom: 10px; }
   .lobby-grid, .stats-board { gap: 8px; }
 

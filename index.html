@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pulse Strike - 荣耀与轮回 (v14.0 磐石同频版)</title>
+  <title>Pulse Strike - 荣耀与轮回 (v14.5 圣光降临版)</title>
   <link href="style.css" rel="stylesheet" type="text/css" />
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
@@ -62,7 +62,8 @@
         <button class="mode-btn mode-pvp" style="grid-column: 1 / -1;" onclick="openGameSelect()">⚔️ 进入战区 (开始游戏)</button>
         <button class="mode-btn" style="background: #1f6feb;" onclick="openFriendsModal()">👥 特工通讯 (好友)</button>
         <button class="mode-btn" style="background: var(--purple);" onclick="openLeaderboardModal()">🏆 荣耀榜单 (胜率)</button>
-        <button class="mode-btn info-btn" style="grid-column: 1 / -1; background: rgba(255,255,255,0.05);" onclick="showTalentCodex()">📚 查阅圣魔图鉴</button>
+        <button class="mode-btn info-btn" style="background: rgba(255,255,255,0.05);" onclick="toggleRules(true)">📖 战术法则</button>
+        <button class="mode-btn info-btn" style="background: rgba(255,255,255,0.05);" onclick="showTalentCodex()">📚 圣魔图鉴</button>
         <button class="back-link" style="grid-column: 1 / -1;" onclick="handleLogout()">← 断开连接 (退出登录)</button>
       </div>
 
@@ -121,7 +122,10 @@
       <div id="step-mode" style="display: none;">
         <button class="mode-btn mode-pve" onclick="selectMode('pve')">单机实战演练 (1v1)</button>
         <button class="mode-btn mode-pvp" onclick="selectMode('pvp')">全网联机乱斗 (多人)</button>
-        <button class="mode-btn info-btn" onclick="toggleRules(true)">📖 查看详细规则</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+          <button class="mode-btn info-btn" onclick="toggleRules(true)">📖 查看法则</button>
+          <button class="mode-btn info-btn" onclick="showTalentCodex()">📚 圣魔图鉴</button>
+        </div>
         <button class="back-link" onclick="goBackToHub()">← 返回主城中心</button>
       </div>
     </div>
@@ -138,14 +142,15 @@
   </div>
 
   <div id="rules-modal" style="display: none;" class="fixed-overlay" onclick="toggleRules(false)">
-    <div class="modal-content" onclick="event.stopPropagation()">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 500px;">
       <h2 style="color: var(--blue); margin-top: 0;">📜 战术核心法则</h2>
-      <div class="rules-body">
+      <div class="rules-body" style="text-align: left; font-size: 0.95em;">
         <p><strong>1. 基础：</strong>装弹(+1弹药)，防御(+1护盾)。射击消耗弹药，溢出破甲扣血。</p>
         <p><strong>2. 战术克制：</strong>趴下躲射击，但被地刺克制受 2 伤。地刺被石头反弹 1 伤。</p>
-        <p><strong>3. 终极深渊法则：</strong></p>
+        <p><strong>3. 祈祷法则：</strong>每次抽取机缘前可进行祈祷，提升 50% 获得对应阵营（天使/恶魔）机缘的概率。</p>
+        <p><strong>4. 终极深渊法则：</strong></p>
         <ul>
-          <li style="color:var(--gold);"><strong>第 80 回合</strong>：全员强制开启【机缘重铸】，可重选天赋。</li>
+          <li style="color:var(--gold);"><strong>第 80 回合</strong>：全员强制开启【机缘重铸】，可重新进行命运祈祷与选择。</li>
           <li style="color:var(--red);"><strong>第 100 回合</strong>：生体衰竭，全场永久禁止包扎！</li>
           <li style="color:var(--purple);"><strong>第 120 回合</strong>：绝对枯竭，全员护盾上限与血量上限各 -2！</li>
         </ul>
@@ -171,18 +176,39 @@
     <button class="back-link" onclick="exitGame()">退出房间</button>
   </div>
 
+  <!-- 祈祷面板 -->
+  <div id="prayer-overlay" style="display: none;" class="fixed-overlay">
+    <div id="prayer-box" class="modal-content" style="max-width: 450px;">
+      <h2 class="talent-title" id="prayer-title-text">🙏 命运祈祷</h2>
+      <p class="talent-subtitle" id="prayer-subtitle-text">万物皆有回响，请选择你的信仰，系统将为你大幅提升对应阵营的降临概率。</p>
+      <div style="display: flex; gap: 15px; margin-top: 20px;">
+        <button class="setup-btn" style="flex: 1; padding: 20px; background: var(--green); border-color: var(--green); display: flex; flex-direction: column; align-items: center;" onclick="confirmPrayer('angel')">
+          <span style="font-size: 2em; margin-bottom: 10px;">👼</span>
+          <span style="font-weight: bold;">祈求圣光</span>
+          <span style="font-size: 0.75em; opacity: 0.8; margin-top: 5px;">(天使机缘 +50%)</span>
+        </button>
+        <button class="setup-btn" style="flex: 1; padding: 20px; background: var(--purple); border-color: var(--purple); display: flex; flex-direction: column; align-items: center;" onclick="confirmPrayer('demon')">
+          <span style="font-size: 2em; margin-bottom: 10px;">😈</span>
+          <span style="font-weight: bold;">聆听深渊</span>
+          <span style="font-size: 0.75em; opacity: 0.8; margin-top: 5px;">(恶魔机缘 +50%)</span>
+        </button>
+      </div>
+      <button class="back-link" id="prayer-keep-btn" style="display:none; margin-top: 20px;" onclick="confirmPrayer('keep')">放弃重铸，保留当前机缘</button>
+    </div>
+  </div>
+
   <!-- 天赋分配面板 -->
   <div id="talent-overlay" style="display: none;" class="fixed-overlay">
     <div id="talent-box">
-      <h2 class="talent-title" id="talent-title-text">✨ 获取机缘 ✨</h2>
-      <p class="talent-subtitle" id="talent-subtitle-text">请选择一项作为本局核心</p>
+      <h2 class="talent-title" id="talent-title-text">✨ 降临机缘 ✨</h2>
+      <p class="talent-subtitle" id="talent-subtitle-text">祈祷已获回应，请选择一项作为本局核心</p>
       <div id="talent-list"></div>
     </div>
   </div>
   <div id="talent-detail-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
     <div class="modal-content" onclick="event.stopPropagation()">
       <h2 id="td-name" style="color: var(--gold); margin-top: 0; text-align: center;">天赋名称</h2>
-      <div class="rules-body" style="text-align: center;"><p><span id="td-type" class="talent-type-badge">类型</span></p><p id="td-desc" style="color: #c9d1d9; margin-top: 20px;">描述</p></div>
+      <div class="rules-body" style="text-align: center;"><p><span id="td-type" class="talent-type-badge">类型</span></p><p id="td-desc" style="color: #c9d1d9; margin-top: 20px; white-space: pre-wrap;">描述</p></div>
       <button class="close-modal" onclick="document.getElementById('talent-detail-modal').style.display='none'">确认</button>
     </div>
   </div>
@@ -252,12 +278,12 @@
     <div class="action-panel" id="action-panel-container">
       <div id="action-waiting" style="display: none;">
         <div class="spinner">⏳</div>
-        <p id="action-waiting-text">指令已锁定，等待风云突变...</p>
+        <p id="action-waiting-text">指令已安全锁定，正在等待其他玩家深思熟虑...</p>
       </div>
 
       <div id="action-controls">
         <div class="target-selector" id="target-selector">
-          <span class="ts-label">锁定目标🎯:</span>
+          <span class="ts-label">锁定目标 🎯:</span>
           <label id="ts-p1"><input type="radio" name="atk-target" value="p1"> <span id="label-t-p1">A</span></label>
           <label id="ts-p2"><input type="radio" name="atk-target" value="p2"> <span id="label-t-p2">B</span></label>
           <label id="ts-p3" style="display:none;"><input type="radio" name="atk-target" value="p3"> <span id="label-t-p3">C</span></label>
@@ -266,7 +292,9 @@
 
         <div class="action-group attack-zone">
           <button class="btn-main reload-btn" onclick="handleInput('reload')">装弹 (RELOAD)</button>
+          
           <div class="shoot-row" id="shoot-controls"></div>
+          
           <div class="shoot-row" id="fatal-shoot-controls" style="display:none; margin-top: 15px; background: rgba(163, 113, 247, 0.1); padding: 8px; border-radius: 8px; border: 1px solid rgba(163, 113, 247, 0.3);">
             <span style="color:var(--purple); font-weight:bold; width: 80px;" id="fatal-shoot-label">蚀命狂击:</span>
             <div id="fatal-shoot-btns" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
@@ -280,6 +308,7 @@
             <button class="btn-t t-spike" onclick="handleInput('ground_spike')">地刺</button>
             <button class="btn-t t-rock" onclick="handleInput('rock')">石头</button>
             <button class="btn-t t-heal" id="btn-heal" onclick="handleInput('heal')">包扎</button>
+            
             <button class="btn-t t-holy" id="btn-holy" onclick="handleInput('holy_light')" style="display:none;">圣光</button>
             <button class="btn-t t-dual" id="btn-dual" onclick="handleInput('dual_heal')" style="display:none;">渡灵</button>
           </div>
