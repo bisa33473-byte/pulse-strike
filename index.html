@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pulse Strike - 荣耀与轮回 (v14.5 圣光降临版)</title>
+  <title>Pulse Strike - 异教徒之影 (v15.0 稳定版)</title>
   <link href="style.css" rel="stylesheet" type="text/css" />
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
@@ -40,31 +40,52 @@
 
   <!-- ==================== 3. 全球主城大厅 (Hub) ==================== -->
   <div id="hub-overlay" style="display: none;" class="fixed-overlay">
-    <div id="hub-box" class="modal-content" style="max-width: 500px; width: 90%;">
+    <div id="hub-box" class="modal-content" style="max-width: 650px; width: 95%;">
       
-      <div style="background: rgba(88,166,255,0.1); padding: 15px; border-radius: 12px; border: 1px solid var(--blue); margin-bottom: 20px; text-align: left;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <span style="color: var(--gold); font-weight: bold; font-size: 0.9em;" id="hub-title">[称号]</span>
-            <span style="color: #fff; font-size: 1.2em; font-weight: bold; margin-left: 5px;" id="hub-username">玩家昵称</span>
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <!-- 个人资料卡 -->
+        <div style="background: rgba(88,166,255,0.1); padding: 15px; border-radius: 12px; border: 1px solid var(--blue); text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="color: var(--gold); font-weight: bold; font-size: 0.9em;" id="hub-title">[称号]</span>
+              <span style="color: #fff; font-size: 1.2em; font-weight: bold; margin-left: 5px;" id="hub-username">玩家昵称</span>
+            </div>
+            <div style="color: #8b949e; font-family: monospace; font-weight: bold;">
+              UID: <span id="hub-uid" style="color: var(--cyan);">------</span>
+            </div>
           </div>
-          <div style="color: #8b949e; font-family: monospace; font-weight: bold;">
-            UID: <span id="hub-uid" style="color: var(--cyan);">------</span>
+          <div style="margin-top: 15px; display: flex; gap: 10px;">
+            <input type="text" id="new-title-input" class="cyber-input" placeholder="自定义新称号" maxlength="8" style="margin-bottom: 0; flex: 2; height: 38px;">
+            <button class="setup-btn" style="flex: 1; padding: 0 10px;" onclick="updateCustomTitle()">修改称号</button>
           </div>
         </div>
-        <div style="margin-top: 15px; display: flex; gap: 10px;">
-          <input type="text" id="new-title-input" class="cyber-input" placeholder="自定义新称号" maxlength="8" style="margin-bottom: 0; flex: 2;">
-          <button class="setup-btn" style="flex: 1; padding: 8px;" onclick="updateCustomTitle()">修改称号</button>
-        </div>
-      </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-        <button class="mode-btn mode-pvp" style="grid-column: 1 / -1;" onclick="openGameSelect()">⚔️ 进入战区 (开始游戏)</button>
-        <button class="mode-btn" style="background: #1f6feb;" onclick="openFriendsModal()">👥 特工通讯 (好友)</button>
-        <button class="mode-btn" style="background: var(--purple);" onclick="openLeaderboardModal()">🏆 荣耀榜单 (胜率)</button>
-        <button class="mode-btn info-btn" style="background: rgba(255,255,255,0.05);" onclick="toggleRules(true)">📖 战术法则</button>
-        <button class="mode-btn info-btn" style="background: rgba(255,255,255,0.05);" onclick="showTalentCodex()">📚 圣魔图鉴</button>
-        <button class="back-link" style="grid-column: 1 / -1;" onclick="handleLogout()">← 断开连接 (退出登录)</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+          <div style="grid-column: 1/-1; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <button class="mode-btn mode-pvp" style="margin:0;" onclick="openGameSelect()">⚔️ 进入战区 (开始游戏)</button>
+            <button class="mode-btn" style="background: #1f6feb; margin:0;" onclick="openFriendsModal()">👥 特工通讯 (好友)</button>
+          </div>
+          
+          <!-- 更新日志视窗 -->
+          <div id="changelog-module" style="grid-column: 1/-1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 15px; text-align: left;">
+            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.0)</div>
+            <div class="rules-body" style="max-height: 140px; overflow-y: auto; font-size: 0.85em; padding-right: 8px;">
+              <p><strong>[新增] 异教徒 (Heretic) 阵营降临：</strong></p>
+              <ul>
+                <li><strong>苟且偷生</strong>：半血开局，可夺取死者的机缘。亲自击杀完美继承，否则继承机缘CD+1。</li>
+                <li><strong>蚀骨封行</strong>：强行禁锢一名敌人下回合所有行动。代价为每操作3次反噬1血。</li>
+                <li><strong>勿视勿听</strong>：双相循环机缘，周期性在“极致护盾/禁止射击”与“高额伤害/禁止防御”间切换。</li>
+              </ul>
+              <p><strong>[优化] 命运祈祷机制：</strong>现于天使、恶魔、异教徒三系中随机展现两系供玩家抉择。</p>
+              <p><strong>[优化] 归光还魂：</strong>移除初始惩罚，复活后的属性剥夺更具压迫感。</p>
+              <p><strong>[回归] 界面与日志：</strong>重新加入日志视窗与详情规则按钮，彻底适配移动端防裁切引擎。</p>
+            </div>
+          </div>
+
+          <button class="mode-btn" style="background: var(--purple); margin:0;" onclick="openLeaderboardModal()">🏆 荣耀榜单 (胜率)</button>
+          <button class="mode-btn info-btn" style="margin:0;" onclick="showTalentCodex()">📚 查阅机缘图鉴</button>
+          <button class="back-link" style="grid-column: 1 / -1;" onclick="handleLogout()">← 断开连接 (退出登录)</button>
+        </div>
       </div>
 
     </div>
@@ -88,7 +109,7 @@
         <div id="friend-requests-list" style="max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 5px;"></div>
       </div>
 
-      <p style="margin: 0 0 5px 0; font-size: 0.9em; color: var(--green); font-weight: bold;">网络直连特工名单</p>
+      <p style="margin: 0 0 5px 0; font-size: 0.9em; color: var(--green); font-weight: bold;">在线通讯名单</p>
       <div id="friends-list" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; min-height: 50px;"></div>
       
       <button class="close-modal" onclick="document.getElementById('friends-modal').style.display='none'">关闭</button>
@@ -97,7 +118,7 @@
 
   <div id="leaderboard-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
     <div class="modal-content" style="max-width: 400px; width: 90%;" onclick="event.stopPropagation()">
-      <h2 style="color: var(--purple); margin-top: 0; text-align: center;">🏆 全服荣耀榜单</h2>
+      <h2 style="color: var(--purple); margin-top: 0; text-align: center;">🏆 胜率榜单</h2>
       <p style="text-align: center; color: #8b949e; font-size: 0.8em; margin-bottom: 15px;">(仅统计多人联机模式胜率，按胜率排序)</p>
       
       <div id="leaderboard-list" style="max-height: 350px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px;">
@@ -123,8 +144,8 @@
         <button class="mode-btn mode-pve" onclick="selectMode('pve')">单机实战演练 (1v1)</button>
         <button class="mode-btn mode-pvp" onclick="selectMode('pvp')">全网联机乱斗 (多人)</button>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-          <button class="mode-btn info-btn" onclick="toggleRules(true)">📖 查看法则</button>
-          <button class="mode-btn info-btn" onclick="showTalentCodex()">📚 圣魔图鉴</button>
+          <button class="mode-btn info-btn" onclick="toggleRules(true)" style="margin:0;">📖 战术法则</button>
+          <button class="mode-btn info-btn" onclick="showTalentCodex()" style="margin:0;">📚 圣魔图鉴</button>
         </div>
         <button class="back-link" onclick="goBackToHub()">← 返回主城中心</button>
       </div>
@@ -134,7 +155,7 @@
   <!-- 图鉴与规则弹窗 -->
   <div id="codex-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
     <div class="modal-content codex-content" onclick="event.stopPropagation()">
-      <h2 style="color: var(--gold); text-align: center; margin-top: 0;">📚 圣魔图鉴</h2>
+      <h2 style="color: var(--gold); text-align: center; margin-top: 0;">📚 阵营机缘图鉴</h2>
       <p style="text-align: center; color: #8b949e; font-size: 0.85em; margin-bottom: 20px;">了解所有机缘与代价，方能百战百胜</p>
       <div id="codex-list-container" class="rules-body" style="max-height: 60vh; overflow-y: auto; padding-right: 10px;"></div>
       <button class="close-modal" onclick="document.getElementById('codex-modal').style.display='none'">关闭图鉴</button>
@@ -142,17 +163,17 @@
   </div>
 
   <div id="rules-modal" style="display: none;" class="fixed-overlay" onclick="toggleRules(false)">
-    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 500px;">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 480px;">
       <h2 style="color: var(--blue); margin-top: 0;">📜 战术核心法则</h2>
       <div class="rules-body" style="text-align: left; font-size: 0.95em;">
         <p><strong>1. 基础：</strong>装弹(+1弹药)，防御(+1护盾)。射击消耗弹药，溢出破甲扣血。</p>
         <p><strong>2. 战术克制：</strong>趴下躲射击，但被地刺克制受 2 伤。地刺被石头反弹 1 伤。</p>
-        <p><strong>3. 祈祷法则：</strong>每次抽取机缘前可进行祈祷，提升 50% 获得对应阵营（天使/恶魔）机缘的概率。</p>
+        <p><strong>3. 命运祈祷：</strong>每次抽取机缘前，系统将随机展示两个信仰选项（天使/恶魔/异教徒），抉择后可提升 50% 对应阵营的降临概率。</p>
         <p><strong>4. 终极深渊法则：</strong></p>
         <ul>
           <li style="color:var(--gold);"><strong>第 80 回合</strong>：全员强制开启【机缘重铸】，可重新进行命运祈祷与选择。</li>
           <li style="color:var(--red);"><strong>第 100 回合</strong>：生体衰竭，全场永久禁止包扎！</li>
-          <li style="color:var(--purple);"><strong>第 120 回合</strong>：绝对枯竭，全员护盾上限与血量上限各 -2！</li>
+          <li style="color:var(--purple);"><strong>第 120 回合</strong>：绝对枯竭，全员护盾上限与血量上限各强制 -2！</li>
         </ul>
       </div>
       <button class="close-modal" onclick="toggleRules(false)">我已了解</button>
@@ -166,6 +187,7 @@
     </div>
     <h2 class="main-title" style="font-size:2.2em;">战前集结大厅</h2>
     <p class="sub-title">房间代码: <span id="lobby-rid" class="highlight-rid"></span> <span style="font-size:0.8em; color:var(--blue); cursor:pointer; text-decoration:underline;" onclick="openFriendsModal()">[直邀好友]</span></p>
+    
     <div class="lobby-grid" id="lobby-grid">
       <div class="lobby-card" id="lobby-p1-card"><div class="role-badge">PLAYER A (房主)</div><div id="lobby-p1-status" class="lobby-status">等待...</div></div>
       <div class="lobby-card" id="lobby-p2-card"><div class="role-badge">PLAYER B</div><div id="lobby-p2-status" class="lobby-status">等待...</div></div>
@@ -176,28 +198,16 @@
     <button class="back-link" onclick="exitGame()">退出房间</button>
   </div>
 
-  <!-- 祈祷面板 -->
+  <!-- 祈祷与机缘面板 -->
   <div id="prayer-overlay" style="display: none;" class="fixed-overlay">
-    <div id="prayer-box" class="modal-content" style="max-width: 450px;">
+    <div id="prayer-box" class="modal-content" style="max-width: 480px;">
       <h2 class="talent-title" id="prayer-title-text">🙏 命运祈祷</h2>
-      <p class="talent-subtitle" id="prayer-subtitle-text">万物皆有回响，请选择你的信仰，系统将为你大幅提升对应阵营的降临概率。</p>
-      <div style="display: flex; gap: 15px; margin-top: 20px;">
-        <button class="setup-btn" style="flex: 1; padding: 20px; background: var(--green); border-color: var(--green); display: flex; flex-direction: column; align-items: center;" onclick="confirmPrayer('angel')">
-          <span style="font-size: 2em; margin-bottom: 10px;">👼</span>
-          <span style="font-weight: bold;">祈求圣光</span>
-          <span style="font-size: 0.75em; opacity: 0.8; margin-top: 5px;">(天使机缘 +50%)</span>
-        </button>
-        <button class="setup-btn" style="flex: 1; padding: 20px; background: var(--purple); border-color: var(--purple); display: flex; flex-direction: column; align-items: center;" onclick="confirmPrayer('demon')">
-          <span style="font-size: 2em; margin-bottom: 10px;">😈</span>
-          <span style="font-weight: bold;">聆听深渊</span>
-          <span style="font-size: 0.75em; opacity: 0.8; margin-top: 5px;">(恶魔机缘 +50%)</span>
-        </button>
-      </div>
-      <button class="back-link" id="prayer-keep-btn" style="display:none; margin-top: 20px;" onclick="confirmPrayer('keep')">放弃重铸，保留当前机缘</button>
+      <p class="talent-subtitle" id="prayer-subtitle-text">万物皆有回响。系统已为你呈现两种信仰，选择其一，大幅提升该阵营降临概率。</p>
+      <div id="prayer-options-container" style="display: flex; gap: 15px; margin-top: 20px;"></div>
+      <button class="back-link" id="prayer-keep-btn" style="display:none; margin-top: 20px; font-weight:bold; color:var(--red);" onclick="confirmPrayer('keep')">放弃重铸，保留当前机缘</button>
     </div>
   </div>
 
-  <!-- 天赋分配面板 -->
   <div id="talent-overlay" style="display: none;" class="fixed-overlay">
     <div id="talent-box">
       <h2 class="talent-title" id="talent-title-text">✨ 降临机缘 ✨</h2>
@@ -205,17 +215,13 @@
       <div id="talent-list"></div>
     </div>
   </div>
-  <div id="talent-detail-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <h2 id="td-name" style="color: var(--gold); margin-top: 0; text-align: center;">天赋名称</h2>
-      <div class="rules-body" style="text-align: center;"><p><span id="td-type" class="talent-type-badge">类型</span></p><p id="td-desc" style="color: #c9d1d9; margin-top: 20px; white-space: pre-wrap;">描述</p></div>
-      <button class="close-modal" onclick="document.getElementById('talent-detail-modal').style.display='none'">确认</button>
-    </div>
-  </div>
 
   <!-- ==================== 核心游戏对战界面 ==================== -->
   <div id="game-container" style="display: none;">
-    <div id="spectator-banner-game" style="display:none; background:var(--gold); color:#000; font-weight:bold; text-align:center; padding:10px; border-radius:8px; margin-bottom:15px;">👁️ 观战模式：您正在实时观看激烈交锋</div>
+    <div id="spectator-banner-game" style="display:none; background:var(--gold); color:#000; font-weight:bold; text-align:center; padding:10px; border-radius:8px; margin-bottom:15px; letter-spacing: 1px;">
+      👁️ 观战模式：您正在实时观看激烈交锋
+    </div>
+
     <div id="game-header">
       <div class="header-left"><span class="logo-text">PULSE STRIKE</span></div>
       <div class="header-right"><span id="round-badge">第 <span id="current-round">1</span> 回合</span><button id="exit-game-btn" onclick="exitGame()">退出</button></div>
@@ -229,7 +235,7 @@
       </div>
       <div class="setup-col divider"><span>- OR -</span></div>
       <div class="setup-row">
-        <input type="text" id="roomInput" placeholder="输入5位房间码" maxlength="5" style="text-transform: uppercase;">
+        <input type="text" id="roomInput" placeholder="输入5位房间码" maxlength="5" style="text-transform: uppercase; text-align:center;">
         <button class="setup-btn join-btn" onclick="joinRoom()">加入</button>
       </div>
     </div>
@@ -238,28 +244,28 @@
     <div class="stats-board" id="stats-board">
       <div class="player-card" id="p1-card">
         <div class="player-label" id="p1-label"><span id="p1-name-display">PLAYER A</span> <span id="p1-turn-status" class="turn-status"></span> <span id="p1-conn" class="conn-status">(离线)</span></div>
-        <div class="active-talent" id="p1-talent-name">无天赋</div>
+        <div class="active-talent" id="p1-talent-name">无机缘</div>
         <div class="stat-item">血量: <span id="p1-hp" class="val-text">0</span></div>
         <div class="stat-item">弹药: <span id="p1-ammo" class="val-text">0</span></div>
         <div class="stat-item">护盾: <span id="p1-shield" class="val-text">0</span></div>
       </div>
       <div class="player-card" id="p2-card">
         <div class="player-label" id="p2-label"><span id="p2-name-display">PLAYER B</span> <span id="p2-turn-status" class="turn-status"></span> <span id="p2-conn" class="conn-status">(离线)</span></div>
-        <div class="active-talent" id="p2-talent-name">无天赋</div>
+        <div class="active-talent" id="p2-talent-name">无机缘</div>
         <div class="stat-item">血量: <span id="p2-hp" class="val-text">0</span></div>
         <div class="stat-item">弹药: <span id="p2-ammo" class="val-text">0</span></div>
         <div class="stat-item">护盾: <span id="p2-shield" class="val-text">0</span></div>
       </div>
       <div class="player-card" id="p3-card" style="display:none;">
         <div class="player-label" id="p3-label"><span id="p3-name-display">PLAYER C</span> <span id="p3-turn-status" class="turn-status"></span> <span id="p3-conn" class="conn-status">(离线)</span></div>
-        <div class="active-talent" id="p3-talent-name">无天赋</div>
+        <div class="active-talent" id="p3-talent-name">无机缘</div>
         <div class="stat-item">血量: <span id="p3-hp" class="val-text">0</span></div>
         <div class="stat-item">弹药: <span id="p3-ammo" class="val-text">0</span></div>
         <div class="stat-item">护盾: <span id="p3-shield" class="val-text">0</span></div>
       </div>
       <div class="player-card" id="p4-card" style="display:none;">
         <div class="player-label" id="p4-label"><span id="p4-name-display">PLAYER D</span> <span id="p4-turn-status" class="turn-status"></span> <span id="p4-conn" class="conn-status">(离线)</span></div>
-        <div class="active-talent" id="p4-talent-name">无天赋</div>
+        <div class="active-talent" id="p4-talent-name">无机缘</div>
         <div class="stat-item">血量: <span id="p4-hp" class="val-text">0</span></div>
         <div class="stat-item">弹药: <span id="p4-ammo" class="val-text">0</span></div>
         <div class="stat-item">护盾: <span id="p4-shield" class="val-text">0</span></div>
@@ -276,6 +282,24 @@
 
     <!-- 操作面板区 -->
     <div class="action-panel" id="action-panel-container">
+      
+      <!-- 异教徒夺取机缘专享面板 -->
+      <div id="loot-panel" style="display: none; text-align: center; padding: 20px; background: rgba(210,153,34,0.1); border-radius: 12px; border: 1px solid rgba(210,153,34,0.3); margin-bottom: 15px;">
+        <h3 style="color:var(--gold); margin-top:0;">👺 苟且偷生：发现可掠夺的机缘！</h3>
+        <p id="loot-text" style="font-weight:bold; font-size:1.1em; color:#fff; white-space:pre-wrap;"></p>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+          <button class="setup-btn host-btn" style="flex:1;" onclick="handleLootChoice(true)">夺取替换</button>
+          <button class="setup-btn" style="flex:1;" onclick="handleLootChoice(false)">放弃拾取</button>
+        </div>
+      </div>
+
+      <!-- 被蚀骨封行禁锢面板 -->
+      <div id="silenced-panel" style="display: none; text-align: center; padding: 30px; background: rgba(163,113,247,0.15); border-radius: 12px; border: 1px solid rgba(163,113,247,0.4); margin-bottom: 15px;">
+        <h3 style="color:var(--purple); margin-top:0;">🔮 你已被【蚀骨封行】禁锢</h3>
+        <p style="color:#c9d1d9; margin-bottom: 20px;">本回合你无法进行任何战术动作与射击。</p>
+        <button class="setup-btn host-btn" style="width:100%; padding:15px; font-size:1.1em;" onclick="handleInput('skip')">结束本回合</button>
+      </div>
+
       <div id="action-waiting" style="display: none;">
         <div class="spinner">⏳</div>
         <p id="action-waiting-text">指令已安全锁定，正在等待其他玩家深思熟虑...</p>
@@ -298,6 +322,10 @@
           <div class="shoot-row" id="fatal-shoot-controls" style="display:none; margin-top: 15px; background: rgba(163, 113, 247, 0.1); padding: 8px; border-radius: 8px; border: 1px solid rgba(163, 113, 247, 0.3);">
             <span style="color:var(--purple); font-weight:bold; width: 80px;" id="fatal-shoot-label">蚀命狂击:</span>
             <div id="fatal-shoot-btns" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+          </div>
+
+          <div class="shoot-row" id="heretic-action-controls" style="display:none; margin-top: 15px; background: rgba(248, 81, 73, 0.1); padding: 8px; border-radius: 8px; border: 1px solid rgba(248, 81, 73, 0.3);">
+            <button class="btn-t" id="btn-heretic-seal" style="background:var(--red) !important; width:100%;" onclick="handleInput('heretic_seal')">蚀骨封行 (锁定并封印敌方一回合，CD:4)</button>
           </div>
         </div>
 

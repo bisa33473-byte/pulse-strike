@@ -133,6 +133,8 @@ body {
 .talent-card.angel:hover { box-shadow: 0 0 25px rgba(63, 185, 80, 0.25); transform: translateY(-5px); }
 .talent-card.demon { border-bottom: 4px solid var(--purple); }
 .talent-card.demon:hover { box-shadow: 0 0 25px rgba(163, 113, 247, 0.25); transform: translateY(-5px); }
+.talent-card.heretic { border-bottom: 4px solid var(--red); }
+.talent-card.heretic:hover { box-shadow: 0 0 25px rgba(248, 81, 73, 0.25); transform: translateY(-5px); }
 .talent-type-badge { background: var(--border); padding: 4px 12px; border-radius: 12px; font-size: 0.85em; color: white; font-weight: bold; }
 
 /* ==================== 局内卡片 ==================== */
@@ -229,16 +231,6 @@ body {
 .setup-btn.join-btn { background: var(--gold); border-color: var(--gold); }
 .setup-btn.join-btn:hover { filter: brightness(1.2); }
 
-/* ==================== 更新日志 ==================== */
-.main-title { font-size: 3em; color: var(--blue); margin: 0; text-shadow: 0 0 20px rgba(88, 166, 255, 0.4); font-weight: 900; }
-.sub-title { font-size: 0.85em; color: #8b949e; margin-bottom: 30px; letter-spacing: 1px; }
-#changelog-section { margin-top: 30px; text-align: left; background: rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 15px; border: 1px solid #21262d; }
-.section-header { font-size: 0.9em; font-weight: bold; color: var(--blue); margin-bottom: 12px; display: flex; align-items: center; }
-.log-content { max-height: 140px; overflow-y: auto; padding-right: 10px; }
-.log-item { margin-bottom: 15px; border-left: 2px solid var(--border); padding-left: 10px; }
-.log-ver { font-size: 11px; background: var(--border); padding: 2px 6px; border-radius: 4px; font-weight: bold; color: #fff; }
-.log-item ul { font-size: 0.8em; color: #8b949e; margin: 8px 0 0 15px; padding: 0; }
-
 /* ==================== 手机端屏幕专属适配 ==================== */
 @media screen and (max-width: 768px) {
   body { padding: 10px; }
@@ -246,7 +238,7 @@ body {
 
   .main-title { font-size: 2.2em; }
 
-  /* 4人联机变成 2x2 网格 */
+  /* 4人联机变成 2x2 网格，拒绝一长条滑动 */
   .lobby-card, .player-card { min-width: 45%; padding: 12px; margin-bottom: 10px; }
   .lobby-grid, .stats-board { gap: 8px; }
 
