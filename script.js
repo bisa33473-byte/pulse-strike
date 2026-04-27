@@ -12,7 +12,7 @@ const db = firebase.database();
 
 let myRole = null, roomRef = null, currentRoomId = "", isPvE = false;
 let gameState = null, gameVersion = 'stable', isProcessing = false; 
-let isRerollingGlobal = false; // 记录当前是否是重铸环节
+let isRerollingGlobal = false;
 
 // ==================== 用户认证与缓存 ====================
 let currentUser = { uid: "", username: "", title: "初阶特工", stats: { total: 0, wins: 0 }, friends: {} };
@@ -110,8 +110,37 @@ function updateCustomTitle() {
   });
 }
 
-function openGameSelect() { document.getElementById('hub-overlay').style.display = 'none'; document.getElementById('mode-overlay').style.display = 'flex'; }
-function goBackToHub() { document.getElementById('mode-overlay').style.display = 'none'; document.getElementById('hub-overlay').style.display = 'flex'; }
+function openGameSelect() { 
+  document.getElementById('hub-overlay').style.display = 'none'; 
+  document.getElementById('mode-overlay').style.display = 'flex'; 
+  document.getElementById('step-version').style.display = 'block';
+  document.getElementById('step-mode').style.display = 'none';
+  if(document.getElementById('step-pve')) document.getElementById('step-pve').style.display = 'none';
+}
+
+function goBackToHub() { 
+  document.getElementById('mode-overlay').style.display = 'none'; 
+  document.getElementById('hub-overlay').style.display = 'flex'; 
+  document.getElementById('step-version').style.display = 'block';
+  document.getElementById('step-mode').style.display = 'none';
+  if(document.getElementById('step-pve')) document.getElementById('step-pve').style.display = 'none';
+}
+
+function goBackToVersion() { 
+  document.getElementById('step-version').style.display = 'block'; 
+  document.getElementById('step-mode').style.display = 'none'; 
+  if(document.getElementById('step-pve')) document.getElementById('step-pve').style.display = 'none';
+}
+
+function showPveOptions() {
+  document.getElementById('step-mode').style.display = 'none';
+  document.getElementById('step-pve').style.display = 'block';
+}
+
+function hidePveOptions() {
+  document.getElementById('step-pve').style.display = 'none';
+  document.getElementById('step-mode').style.display = 'block';
+}
 
 // ==================== 社交与通讯 ====================
 function openFriendsModal() { document.getElementById('friends-modal').style.display = 'flex'; renderFriendsList(); }
@@ -236,11 +265,30 @@ function openLeaderboardModal() {
   });
 }
 
+// ==================== 核心机制判定辅助函数 ====================
+function hasTalent(p, tid) {
+  if (!p) return false;
+  if (p.talent && p.talent.id === tid) return true;
+  if (p.extraTalent && p.extraTalent.id === tid) return true;
+  return false;
+}
+
 // ==================== 数据生成器 ====================
 function getInitialState(capacity) {
   let hp = 5; let maxAmmo = 4; let maxShield = 4;
   if (capacity === 4) { hp = 9; maxAmmo = 6; maxShield = 6; } else if (capacity === 3) { hp = 7; maxAmmo = 5; maxShield = 5; }
-  let state = { config: { capacity: capacity, maxAmmo: maxAmmo, maxShield: maxShield, baseHp: hp }, log: "准备就绪，请出招！", round: 1, status: 'waiting', playAgain: { p1: false, p2: false, p3: false, p4: false } };
+
+  let candidates = [];
+  if (capacity >= 1) candidates.push('p1');
+  if (capacity >= 2) candidates.push('p2');
+  if (capacity >= 3) candidates.push('p3');
+  if (capacity >= 4) candidates.push('p4');
+  let h1Candidate = candidates[Math.floor(Math.random() * candidates.length)];
+
+  let state = { 
+    config: { capacity: capacity, maxAmmo: maxAmmo, maxShield: maxShield, baseHp: hp, h1_candidate: h1Candidate }, 
+    log: "准备就绪，请出招！", round: 1, status: 'waiting', playAgain: { p1: false, p2: false, p3: false, p4: false } 
+  };
   state.p1 = createBasePlayer(capacity >= 1 ? hp : 0, hp, maxAmmo, maxShield);
   state.p2 = createBasePlayer(capacity >= 2 ? hp : 0, hp, maxAmmo, maxShield);
   state.p3 = createBasePlayer(capacity >= 3 ? hp : 0, hp, maxAmmo, maxShield);
@@ -248,9 +296,10 @@ function getInitialState(capacity) {
   return state;
 }
 function createBasePlayer(currentHp, maxHp, maxAmmo, maxShield) {
-  return { uid: "", username: "", title: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", talent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, rerolled: false, 
-    reviveCount: 0, actionCount: 0, silenced: 0, h3State: '勿视', h3Timer: 0,
-    pendingLoot: null // 苟且偷生机缘缓存
+  return { uid: "", username: "", title: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", 
+    talent: null, extraTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, rerolled: false, 
+    reviveCount: 0, reviveCharges: 0, a5Recoveries: [], actionCount: 0, silenced: 0, h3State: '勿视', h3Timer: 0, roundDmg: 0,
+    pendingLoot: null, lootedMark: false 
   };
 }
 
@@ -265,21 +314,26 @@ const TALENT_POOL = {
     { id: 'm_a2', type: 'angel', category: '机制', name: '圣戒', desc: '专属动作【圣光】(每5回合可用)：无视防御，强行抽取目标1血量反哺自身。\n代价：本局游戏彻底丧失【包扎】能力。' },
     { id: 'm_a3', type: 'angel', category: '机制', name: '神圣复苏', desc: '回合末，若本回合未受伤害且未射击，恢复 1 点血。\n(触发后进入 2 回合冷却)' },
     { id: 'm_a4', type: 'angel', category: '机制', name: '双向渡灵', desc: '专属动作【渡灵】(每4回合可用)：无消耗。50%概率恢复自身1血，50%概率随机给一名存活敌人恢复1血。' },
-    { id: 'm_a5', type: 'angel', category: '机制', name: '归光还魂', desc: '致命伤时获得复活1次(冷却50回合)。\n代价：复活1次后最大血盾弹均-2并清空当前弹盾。第二次复活后，所有上限强制降为1，清空当前弹盾。' },
+    { id: 'm_a5', type: 'angel', category: '机制', name: '归光还魂', desc: '受致命伤时复活并回满血但清空弹盾。复活后血盾上限降低(双人-2/三人-3/四人-4)，15回合后上限部分恢复。若上限归零则被教廷彻底抹杀。\n充能：开局自带1次，第80、120回合及之后每40回合补充至1次。' },
     { id: 'm_d1', type: 'demon', category: '机制', name: '深渊魔弹', desc: '你的射击必定穿甲（无视护盾直接扣血）。\n代价：你永久无法使用防御动作。' },
     { id: 'm_d2', type: 'demon', category: '机制', name: '嗜血狂热', desc: '装弹时流失 1 血量，但获得 3 发子弹。\n(触发后 2 回合内只能普通装弹；1血时触发濒死保护停止扣血)' },
     { id: 'm_d3', type: 'demon', category: '机制', name: '贪婪吞噬', desc: '射击若对目标造成掉血，吸取 1 点生命。\n(触发后进入 2 回合冷却) 代价：血量上限 -2，护盾上限固定为 2。' },
     { id: 'm_d4', type: 'demon', category: '机制', name: '蚀命狂击', desc: '专属动作【狂击】(每3回合可用)：60%概率伤害翻倍；20%射击失效且自身受一半伤害反噬(不耗弹)；20%哑火空枪(耗弹)。' },
 
-    { id: 'm_h1', type: 'heretic', category: '机制', name: '苟且偷生', desc: '被动：生命值上限减半(向下取整)。在场上有玩家死亡后，可夺取其非数值类机缘。若为亲自击杀则完美继承；若并非亲手击杀则继承的机缘CD+1。' },
+    { id: 'm_h1', type: 'heretic', category: '机制', name: '苟且偷生', desc: '被动：拥有此机缘时最多可再持有一个机缘（场上唯一候选）。此机缘本身不可被替换。生命值上限减半。在场上有玩家死亡后，可夺取其非数值类机缘替换自身的第二机缘。亲自击杀完美继承，否则继承CD+1。' },
     { id: 'm_h2', type: 'heretic', category: '机制', name: '蚀骨封行', desc: '专属动作【封行】(每4回合可用)：指定一位玩家，使其下回合被禁锢无法采取任何行动。\n代价：自己每进行3步任意操作，会被反噬1点生命(无视防御)。' },
-    { id: 'm_h3', type: 'heretic', category: '机制', name: '勿视勿听', desc: '被动：血盾弹上限及初始值均+1。周期性切换状态。初始【勿视】:禁用开火，护盾+1，持续5回合。【勿听】:禁用防御与趴下，造成伤害+2，持续3回合。' }
+    { id: 'm_h3', type: 'heretic', category: '机制', name: '勿视勿听', desc: '被动：血盾弹上限及初始值均+1。周期性切换状态。初始【勿视】:禁用开火，护盾+1，持续5回合。\n【勿听】:禁用防御与趴下，造成伤害+2，持续3回合。' },
+    { id: 'm_h4', type: 'heretic', category: '机制', name: '共生', desc: '专属动作【共生】(每3回合可用)：与指定目标血量绑定一回合。若你本回合受到攻击扣血，对方将同时扣除同等血量。\n代价：若对方在本回合死亡，你将同时殉葬死亡。' }
   ]
 };
 
 // ==================== 建立与加入 ====================
-function selectVersion(v) { gameVersion = v; document.getElementById('step-version').style.display = 'none'; document.getElementById('step-mode').style.display = 'block'; }
-function goBackToVersion() { document.getElementById('step-version').style.display = 'block'; document.getElementById('step-mode').style.display = 'none'; }
+function selectVersion(v) { 
+  gameVersion = v; 
+  document.getElementById('step-version').style.display = 'none'; 
+  document.getElementById('step-mode').style.display = 'block'; 
+  if(document.getElementById('step-pve')) document.getElementById('step-pve').style.display = 'none';
+}
 function toggleRules(show) { document.getElementById('rules-modal').style.display = show ? 'flex' : 'none'; }
 function showTalentCodex() {
   const container = document.getElementById('codex-list-container'); container.innerHTML = "";
@@ -304,16 +358,31 @@ function exitGame() {
   } else location.reload(); 
 }
 
-function selectMode(mode) {
+// 核心更新：允许单机演练支持多位 AI
+function selectMode(mode, cap = 2) {
   isPvE = (mode === 'pve');
   document.getElementById('mode-overlay').style.display = 'none';
   document.getElementById('game-container').style.display = 'block';
   if (isPvE) {
     document.getElementById('room-setup').style.display = 'none'; myRole = 'p1';
-    gameState = getInitialState(2);
+    gameState = getInitialState(cap);
     gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title;
-    gameState.p2.uid = "000000"; gameState.p2.username = "COMPUTER (AI)"; gameState.p2.title = "机械领主";
-    gameState.status = 'playing'; gameState.p1.joined = true; gameState.p1.ready = true; gameState.p2.joined = true; gameState.p2.ready = true;
+
+    let aiNames = ["机甲卫士", "深渊投影", "虚空矩阵"];
+    for (let i = 2; i <= cap; i++) {
+       let pk = 'p' + i;
+       gameState[pk].uid = "00000" + i;
+       gameState[pk].username = "AI - " + aiNames[i-2];
+       gameState[pk].title = "机械领主";
+       gameState[pk].talent = null; gameState[pk].extraTalent = null;
+       gameState[pk].pendingLoot = null; gameState[pk].reviveCharges = 0;
+       gameState[pk].joined = true; gameState[pk].ready = true;
+    }
+
+    gameState.p1.talent = null; gameState.p1.extraTalent = null;
+    gameState.p1.pendingLoot = null; gameState.p1.reviveCharges = 0;
+    gameState.status = 'playing'; gameState.p1.joined = true; gameState.p1.ready = true;
+
     if (gameVersion === 'beta') triggerPrayerPhase(false); else render(gameState);
   } else { document.getElementById('room-setup').style.display = 'flex'; }
 }
@@ -405,7 +474,7 @@ function updateLobbyPlayer(playerId, pData, isActive) {
   else { statusEl.innerText = "已准备就绪！"; statusEl.style.color = "#3fb950"; if(cardEl) cardEl.style.borderColor = "#3fb950"; }
 }
 
-// ==================== 祈祷与机缘系统 (新增异教徒 3选2) ====================
+// ==================== 祈祷与机缘系统 ====================
 function triggerPrayerPhase(isReroll) {
   isRerollingGlobal = isReroll;
   const pool = ['angel', 'demon', 'heretic'];
@@ -418,7 +487,7 @@ function triggerPrayerPhase(isReroll) {
     const btn = document.createElement('button');
     btn.className = "setup-btn"; btn.style.cssText = "flex:1; padding:20px; display:flex; flex-direction:column; align-items:center;";
     let icon = bias === 'angel' ? '👼' : (bias === 'demon' ? '😈' : '👺');
-    let label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆听深渊' : '追随禁忌');
+    let label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆深渊' : '追随禁忌');
     let color = bias === 'angel' ? 'var(--green)' : (bias === 'demon' ? 'var(--purple)' : 'var(--red)');
     btn.style.background = color; btn.style.borderColor = color;
     let boostName = bias === 'angel' ? '天使' : (bias === 'demon' ? '恶魔' : '异教徒');
@@ -454,11 +523,15 @@ function showTalentSelection(isReroll, bias) {
   const weightedPool = [];
   const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
   for (let i = 0; i < allItems.length; i++) {
+    let item = allItems[i];
+    // 限制：苟且偷生只展示给特定的候选人
+    if (item.id === 'm_h1' && gameState.config.h1_candidate !== myRole) continue;
+
     let weight = 1;
-    if (bias === 'angel' && allItems[i].type === 'angel') weight = 3;
-    if (bias === 'demon' && allItems[i].type === 'demon') weight = 3;
-    if (bias === 'heretic' && allItems[i].type === 'heretic') weight = 3;
-    for (let w = 0; w < weight; w++) weightedPool.push(allItems[i]);
+    if (bias === 'angel' && item.type === 'angel') weight = 3;
+    if (bias === 'demon' && item.type === 'demon') weight = 3;
+    if (bias === 'heretic' && item.type === 'heretic') weight = 3;
+    for (let w = 0; w < weight; w++) weightedPool.push(item);
   }
 
   let options = [];
@@ -495,13 +568,11 @@ function applyTalentMods(playerData, t) {
   if (t.id === 'n_d1') { playerData.ammo += 4; playerData.maxHp -= 3; playerData.hp -= 3; } 
   else if (t.id === 'n_d2') { playerData.shield += 3; playerData.maxHp -= 3; playerData.hp -= 3; } 
   else if (t.id === 'm_d3') { playerData.maxHp -= 2; playerData.hp -= 2; playerData.maxShield = 2; if (playerData.shield > 2) playerData.shield = 2; }
-  else if (t.id === 'm_a5') {
-    playerData.ammo = 0; playerData.shield = 0; playerData.reviveCount = 0;
-  }
+  else if (t.id === 'm_a5') { playerData.reviveCharges = 1; }
   else if (t.id === 'm_h1') {
     playerData.maxHp = Math.floor(playerData.maxHp / 2); if (playerData.maxHp < 1) playerData.maxHp = 1;
     if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
-    playerData.ammo = 0; playerData.shield = 0;
+    playerData.extraTalent = null;
   }
   else if (t.id === 'm_h2') { playerData.actionCount = 0; }
   else if (t.id === 'm_h3') {
@@ -510,46 +581,81 @@ function applyTalentMods(playerData, t) {
   }
 }
 
+// 核心更新：多位 AI 机缘随机赋予
 function applyTalent(t, isReroll) {
   document.getElementById('talent-overlay').style.display = 'none';
   if (isPvE) {
     if (isReroll) {
-      if (t !== 'keep') { removeTalentMods(gameState.p1, gameState.p1.talent, gameState.config); gameState.p1.talent = t; applyTalentMods(gameState.p1, t); }
-      gameState.p1.rerolled = true;
-      if (gameState.p2.hp > 0) {
-        if (Math.random() > 0.2) {
-          removeTalentMods(gameState.p2, gameState.p2.talent, gameState.config);
-          const aiBias = ['angel', 'demon', 'heretic'][Math.floor(Math.random()*3)];
-          const weightedPool = []; const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
-          for (let i = 0; i < allItems.length; i++) {
-            let weight = 1; if (aiBias === 'angel' && allItems[i].type === 'angel') weight = 3; if (aiBias === 'demon' && allItems[i].type === 'demon') weight = 3; if (aiBias === 'heretic' && allItems[i].type === 'heretic') weight = 3;
-            for (let w = 0; w < weight; w++) weightedPool.push(allItems[i]);
-          }
-          const aiT = weightedPool[Math.floor(Math.random() * weightedPool.length)];
-          gameState.p2.talent = aiT; applyTalentMods(gameState.p2, aiT);
+      if (t !== 'keep') { 
+        if (gameState.p1.talent && gameState.p1.talent.id === 'm_h1') {
+           if (gameState.p1.extraTalent) removeTalentMods(gameState.p1, gameState.p1.extraTalent, gameState.config);
+           gameState.p1.extraTalent = t; applyTalentMods(gameState.p1, t);
+        } else {
+           removeTalentMods(gameState.p1, gameState.p1.talent, gameState.config); gameState.p1.talent = t; applyTalentMods(gameState.p1, t); 
         }
-        gameState.p2.rerolled = true;
+      }
+      gameState.p1.rerolled = true;
+      for (let i = 2; i <= gameState.config.capacity; i++) {
+        let pk = 'p' + i;
+        if (gameState[pk] && gameState[pk].hp > 0) {
+          if (Math.random() > 0.2) {
+            if (gameState[pk].talent && gameState[pk].talent.id === 'm_h1') {
+               if (gameState[pk].extraTalent) removeTalentMods(gameState[pk], gameState[pk].extraTalent, gameState.config);
+            } else { removeTalentMods(gameState[pk], gameState[pk].talent, gameState.config); }
+
+            const aiBias = ['angel', 'demon', 'heretic'][Math.floor(Math.random()*3)];
+            const weightedPool = []; const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
+            for (let j = 0; j < allItems.length; j++) {
+              if (allItems[j].id === 'm_h1' && gameState.config.h1_candidate !== pk) continue;
+              let weight = 1; if (aiBias === 'angel' && allItems[j].type === 'angel') weight = 3; if (aiBias === 'demon' && allItems[j].type === 'demon') weight = 3; if (aiBias === 'heretic' && allItems[j].type === 'heretic') weight = 3;
+              for (let w = 0; w < weight; w++) weightedPool.push(allItems[j]);
+            }
+            const aiT = weightedPool[Math.floor(Math.random() * weightedPool.length)];
+            if (gameState[pk].talent && gameState[pk].talent.id === 'm_h1') {
+               gameState[pk].extraTalent = aiT; applyTalentMods(gameState[pk], aiT);
+            } else {
+               gameState[pk].talent = aiT; applyTalentMods(gameState[pk], aiT);
+            }
+          }
+          gameState[pk].rerolled = true;
+        }
       }
       render(gameState); checkRoundStart(); 
     } else {
       gameState.p1.talent = t; applyTalentMods(gameState.p1, t);
       const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
-      const aiT = allItems[Math.floor(Math.random() * allItems.length)];
-      gameState.p2.talent = aiT; applyTalentMods(gameState.p2, aiT);
+
+      for (let i = 2; i <= gameState.config.capacity; i++) {
+         let pk = 'p' + i;
+         const aiItems = allItems.filter(item => !(item.id === 'm_h1' && gameState.config.h1_candidate !== pk));
+         const aiT = aiItems[Math.floor(Math.random() * aiItems.length)];
+         gameState[pk].talent = aiT; applyTalentMods(gameState[pk], aiT);
+      }
       render(gameState); 
     }
   } else {
     let pData = gameState[myRole];
     if (isReroll) {
-      if (t !== 'keep') { removeTalentMods(pData, pData.talent, gameState.config); pData.talent = t; applyTalentMods(pData, t); }
+      if (t !== 'keep') { 
+         if (pData.talent && pData.talent.id === 'm_h1') {
+            if (pData.extraTalent) removeTalentMods(pData, pData.extraTalent, gameState.config);
+            pData.extraTalent = t; applyTalentMods(pData, t);
+         } else {
+            removeTalentMods(pData, pData.talent, gameState.config); pData.talent = t; applyTalentMods(pData, t); 
+         }
+      }
       pData.rerolled = true;
     } else { pData.talent = t; pData.ready = true; applyTalentMods(pData, t); }
     if (roomRef) roomRef.child(myRole).set(pData);
   }
 }
+
 function showTalentDetail(t) {
   if (!t) return;
-  document.getElementById('td-name').innerText = t.name;
+  const nameEl = document.getElementById('td-name');
+  if (!nameEl) return; 
+
+  nameEl.innerText = t.name;
   const typeBadge = document.getElementById('td-type');
   if (t.type === 'angel') { typeBadge.innerText = '👼 天使 | ' + t.category + '类'; typeBadge.style.background = '#3fb950'; } 
   else if (t.type === 'demon') { typeBadge.innerText = '😈 恶魔 | ' + t.category + '类'; typeBadge.style.background = '#a371f7'; }
@@ -557,7 +663,6 @@ function showTalentDetail(t) {
   document.getElementById('td-desc').innerText = t.desc; document.getElementById('talent-detail-modal').style.display = 'flex';
 }
 
-// 苟且偷生手动掠夺判定
 function handleLootChoice(accept) {
   const pData = gameState[myRole];
   if (!pData || !pData.pendingLoot) return;
@@ -565,14 +670,17 @@ function handleLootChoice(accept) {
   if (accept) {
     let newT = pData.pendingLoot.talent;
     newT.talentCd = (newT.talentCd || 0) + pData.pendingLoot.cdPenalty;
-    removeTalentMods(pData, pData.talent, gameState.config);
-    pData.talent = newT;
-    applyTalentMods(pData, newT);
+    if (pData.talent && pData.talent.id === 'm_h1') {
+      if (pData.extraTalent) removeTalentMods(pData, pData.extraTalent, gameState.config);
+      pData.extraTalent = newT; applyTalentMods(pData, newT);
+    } else {
+      removeTalentMods(pData, pData.talent, gameState.config);
+      pData.talent = newT; applyTalentMods(pData, newT);
+    }
   }
   pData.pendingLoot = null;
   if (isPvE) { render(gameState); } else { roomRef.child(myRole).set(pData); }
 }
-
 
 // ==================== 安全校验与动作处理 ====================
 function checkRoundStart() {
@@ -593,7 +701,6 @@ function checkRoundStart() {
 
   let allMoved = true;
   for (let i = 0; i < aliveKeys.length; i++) {
-    // 带有 pendingLoot 且 move 为空的玩家必须先进行抉择，不能直接结算回合
     if (gameState[aliveKeys[i]].pendingLoot) { allMoved = false; break; }
     if (gameState[aliveKeys[i]].move === "") { allMoved = false; break; }
   }
@@ -614,6 +721,7 @@ function checkRoundStart() {
   }
 }
 
+// 核心更新：允许为共生选择目标并接管单机 AI 循环
 function handleInput(move, val = 0) {
   if (!gameState || !myRole || myRole === 'spectator' || !gameState[myRole]) return;
   const myData = gameState[myRole];
@@ -622,16 +730,13 @@ function handleInput(move, val = 0) {
 
   if (myData.silenced > 0 && move !== 'skip') return alert("你已被【蚀骨封行】禁锢，只能结束回合！");
 
-  const t = myData.talent;
-  if (t) {
-    if (t.id === 'm_a1' && move === 'shoot' && val > 2) return alert("【圣盾坚壁】单次射击最高 2 发");
-    if (t.id === 'm_d1' && move === 'shield') return alert("【深渊魔弹】无法使用防御");
-    if (t.id === 'n_d1' && (move === 'shoot' || move === 'fatal_shoot') && gameState.round === 1) return alert("【军火狂人】第一回合禁止开火");
-    if (t.id === 'm_a2' && move === 'heal') return alert("【圣戒】丧失包扎能力");
-    if (t.id === 'm_h3') {
-      if (myData.h3State === '勿视' && (move === 'shoot' || move === 'fatal_shoot')) return alert("【勿视】状态下，禁止开火！");
-      if (myData.h3State === '勿听' && (move === 'shield' || move === 'duck')) return alert("【勿听】状态下，舍弃一切防御动作！");
-    }
+  if (hasTalent(myData, 'm_a1') && move === 'shoot' && val > 2) return alert("【圣盾坚壁】单次射击最高 2 发");
+  if (hasTalent(myData, 'm_d1') && move === 'shield') return alert("【深渊魔弹】无法使用防御");
+  if (hasTalent(myData, 'n_d1') && (move === 'shoot' || move === 'fatal_shoot') && gameState.round === 1) return alert("【军火狂人】第一回合禁止开火");
+  if (hasTalent(myData, 'm_a2') && move === 'heal') return alert("【圣戒】丧失包扎能力");
+  if (hasTalent(myData, 'm_h3')) {
+    if (myData.h3State === '勿视' && (move === 'shoot' || move === 'fatal_shoot')) return alert("【勿视】状态下，禁止开火！");
+    if (myData.h3State === '勿听' && (move === 'shield' || move === 'duck')) return alert("【勿听】状态下，舍弃一切防御动作！");
   }
 
   if ((move === 'shoot' || move === 'fatal_shoot') && myData.ammo < val) return alert("弹药不足！");
@@ -642,24 +747,28 @@ function handleInput(move, val = 0) {
     if (myData.hp >= myData.maxHp) return alert("生命值已满。");
   }
   if (move === 'holy_light') {
-    if (!t || t.id !== 'm_a2') return alert("非法操作！");
+    if (!hasTalent(myData, 'm_a2')) return alert("非法操作！");
     if (myData.holyCd > 0) return alert("【圣光】冷却中，还需 " + myData.holyCd + " 回合！");
   }
   if (move === 'dual_heal') {
-    if (!t || t.id !== 'm_a4') return alert("非法操作！");
+    if (!hasTalent(myData, 'm_a4')) return alert("非法操作！");
     if (myData.dualCd > 0) return alert("【渡灵】冷却中，还需 " + myData.dualCd + " 回合！");
   }
   if (move === 'fatal_shoot') {
-    if (!t || t.id !== 'm_d4') return alert("非法操作！");
+    if (!hasTalent(myData, 'm_d4')) return alert("非法操作！");
     if (myData.fatalCd > 0) return alert("【狂击】冷却中，还需 " + myData.fatalCd + " 回合！");
   }
   if (move === 'heretic_seal') {
-    if (!t || t.id !== 'm_h2') return alert("非法操作！");
+    if (!hasTalent(myData, 'm_h2')) return alert("非法操作！");
     if (myData.talentCd > 0) return alert("【蚀骨封行】冷却中，还需 " + myData.talentCd + " 回合！");
+  }
+  if (move === 'symbiosis') {
+    if (!hasTalent(myData, 'm_h4')) return alert("非法操作！");
+    if (myData.symCd > 0) return alert("【共生】冷却中，还需 " + myData.symCd + " 回合！");
   }
 
   let target = "";
-  if (move === 'shoot' || move === 'ground_spike' || move === 'holy_light' || move === 'fatal_shoot' || move === 'heretic_seal') {
+  if (move === 'shoot' || move === 'ground_spike' || move === 'holy_light' || move === 'fatal_shoot' || move === 'heretic_seal' || move === 'symbiosis') {
     if (gameState.config.capacity === 2) { target = myRole === 'p1' ? 'p2' : 'p1'; } 
     else {
       const tRadio = document.querySelector('input[name="atk-target"]:checked');
@@ -671,58 +780,90 @@ function handleInput(move, val = 0) {
 
   if (isPvE) {
     gameState.p1.move = move; gameState.p1.val = val; gameState.p1.target = target;
-    const aiDecision = getSmartAiMove('p2', 'p1');
-    gameState.p2.move = aiDecision.move; gameState.p2.val = aiDecision.val; gameState.p2.target = 'p1';
+
+    // AI 集群决策循环
+    let cap = gameState.config.capacity;
+    let aliveKeys = [];
+    for(let i=1; i<=cap; i++) { if(gameState['p'+i].hp > 0) aliveKeys.push('p'+i); }
+
+    for(let i=2; i<=cap; i++) {
+        let aiKey = 'p'+i;
+        if(aliveKeys.includes(aiKey)) {
+            let enemies = aliveKeys.filter(k => k !== aiKey);
+            // 简单敌意评估，随机挑选一个存活玩家
+            let aiTarget = enemies[Math.floor(Math.random() * enemies.length)] || 'p1';
+            const aiDecision = getSmartAiMove(aiKey, enemies);
+            gameState[aiKey].move = aiDecision.move;
+            gameState[aiKey].val = aiDecision.val;
+
+            // 只有定向技能需要锁定 target
+            if (['shoot', 'fatal_shoot', 'ground_spike', 'holy_light', 'heretic_seal', 'symbiosis'].includes(aiDecision.move)) {
+                gameState[aiKey].target = aiTarget;
+            } else {
+                gameState[aiKey].target = "";
+            }
+        }
+    }
     processRound();
   } else {
     if (roomRef) roomRef.child(myRole).update({ move: move, val: val, target: target });
   }
 }
 
-function getSmartAiMove(aiKey, oppKey) {
-  const ai = gameState[aiKey]; const human = gameState[oppKey]; let allowedMoves = [];
+// 核心更新：AI 行为树兼容多敌方数组，并学习释放共生
+function getSmartAiMove(aiKey, enemiesArray) {
+  const ai = gameState[aiKey]; 
+  // 为防御与针对性评估选择一个主要假想敌（优先真实玩家 P1）
+  let oppKey = enemiesArray.includes('p1') ? 'p1' : enemiesArray[0];
+  const human = gameState[oppKey]; 
+  let allowedMoves = [];
+
   if (ai.silenced > 0) return { move: 'skip', val: 0 };
 
   let baseMoves = ['reload', 'shield', 'duck', 'ground_spike', 'rock'];
   for (let i = 0; i < baseMoves.length; i++) {
     let m = baseMoves[i]; let pushIt = true;
-    if (m === 'shield' && ai.talent && ai.talent.id === 'm_d1') pushIt = false;
-    if (ai.talent && ai.talent.id === 'm_h3' && ai.h3State === '勿听' && (m === 'shield' || m === 'duck')) pushIt = false;
+    if (m === 'shield' && hasTalent(ai, 'm_d1')) pushIt = false;
+    if (hasTalent(ai, 'm_h3') && ai.h3State === '勿听' && (m === 'shield' || m === 'duck')) pushIt = false;
     if (pushIt) allowedMoves.push(m);
   }
 
-  if (ai.talent && ai.talent.id === 'm_a2' && ai.holyCd === 0) allowedMoves.push('holy_light', 'holy_light');
-  if (ai.talent && ai.talent.id === 'm_a4' && ai.dualCd === 0 && ai.hp < ai.maxHp) {
+  if (hasTalent(ai, 'm_a2') && ai.holyCd === 0) allowedMoves.push('holy_light', 'holy_light');
+  if (hasTalent(ai, 'm_a4') && ai.dualCd === 0 && ai.hp < ai.maxHp) {
     if (ai.hp <= 3 && Math.random() < 0.7) return { move: 'dual_heal', val: 0 };
     allowedMoves.push('dual_heal');
   }
-  if (ai.talent && ai.talent.id === 'm_h2' && ai.talentCd === 0) {
-    if (human.hp > 0) return { move: 'heretic_seal', val: 0 };
+  if (hasTalent(ai, 'm_h2') && ai.talentCd === 0) {
+    if (human && human.hp > 0) return { move: 'heretic_seal', val: 0 };
   }
-  if ((!ai.talent || ai.talent.id !== 'm_a2') && gameState.round < 100) {
+  if (hasTalent(ai, 'm_h4') && ai.symCd === 0 && enemiesArray.length > 0) {
+    if (ai.hp >= 3 || Math.random() < 0.6) allowedMoves.push('symbiosis', 'symbiosis'); // 有足够血量或搏命时使用
+  }
+
+  if (!hasTalent(ai, 'm_a2') && gameState.round < 100) {
     if (ai.shield >= 2 && ai.hp < ai.maxHp && ai.healCd === 0) {
       if (ai.hp <= 2 && Math.random() < 0.8) return { move: 'heal', val: 0 };
       allowedMoves.push('heal'); 
     }
   }
   let canShoot = true; if (ai.ammo <= 0) canShoot = false;
-  if (ai.talent && ai.talent.id === 'n_d1' && gameState.round === 1) canShoot = false;
-  if (ai.talent && ai.talent.id === 'm_h3' && ai.h3State === '勿视') canShoot = false;
+  if (hasTalent(ai, 'n_d1') && gameState.round === 1) canShoot = false;
+  if (hasTalent(ai, 'm_h3') && ai.h3State === '勿视') canShoot = false;
 
-  if (human.ammo >= 3 && ai.shield === 0 && Math.random() < 0.7) {
+  if (human && human.ammo >= 3 && ai.shield === 0 && Math.random() < 0.7) {
     let defMoves = [];
-    if ((!ai.talent || ai.talent.id !== 'm_d1') && !(ai.talent && ai.talent.id === 'm_h3' && ai.h3State === '勿听')) defMoves.push('shield');
-    if (!(ai.talent && ai.talent.id === 'm_h3' && ai.h3State === '勿听')) defMoves.push('duck');
+    if (!hasTalent(ai, 'm_d1') && !(hasTalent(ai, 'm_h3') && ai.h3State === '勿听')) defMoves.push('shield');
+    if (!(hasTalent(ai, 'm_h3') && ai.h3State === '勿听')) defMoves.push('duck');
     if (defMoves.length > 0) return { move: defMoves[Math.floor(Math.random() * defMoves.length)], val: 0 };
   }
 
-  let isPiercing = (ai.talent && ai.talent.id === 'm_d1'); let effectiveShield = isPiercing ? 0 : human.shield;
+  let isPiercing = hasTalent(ai, 'm_d1'); let effectiveShield = isPiercing ? 0 : (human ? human.shield : 0);
   if (canShoot) {
     let maxVal = ai.ammo; if (maxVal > ai.maxAmmo) maxVal = ai.maxAmmo;
-    if (ai.talent && ai.talent.id === 'm_a1' && maxVal > 2) maxVal = 2;
-    let canFatal = (ai.talent && ai.talent.id === 'm_d4' && ai.fatalCd === 0);
-    if (maxVal > effectiveShield && (maxVal - effectiveShield) >= human.hp) return { move: 'shoot', val: maxVal };
-    if (canFatal) {
+    if (hasTalent(ai, 'm_a1') && maxVal > 2) maxVal = 2;
+    let canFatal = (hasTalent(ai, 'm_d4') && ai.fatalCd === 0);
+    if (human && maxVal > effectiveShield && (maxVal - effectiveShield) >= human.hp) return { move: 'shoot', val: maxVal };
+    if (canFatal && human) {
       if ((maxVal * 2) > effectiveShield && (maxVal * 2 - effectiveShield) >= human.hp && Math.random() < 0.7) return { move: 'fatal_shoot', val: maxVal };
       if (Math.random() < 0.4) return { move: 'fatal_shoot', val: maxVal };
     }
@@ -734,17 +875,22 @@ function getSmartAiMove(aiKey, oppKey) {
   let chosenMove = allowedMoves[Math.floor(Math.random() * allowedMoves.length)]; let shootVal = 0;
   if (chosenMove === 'shoot' || chosenMove === 'fatal_shoot') {
     let maxVal = ai.ammo; if (maxVal > ai.maxAmmo) maxVal = ai.maxAmmo;
-    if (ai.talent && ai.talent.id === 'm_a1' && maxVal > 2) maxVal = 2;
+    if (hasTalent(ai, 'm_a1') && maxVal > 2) maxVal = 2;
     shootVal = Math.floor(Math.random() * maxVal) + 1;
   }
   return { move: chosenMove, val: shootVal };
 }
 
-// ==================== 极限防弹核算矩阵 ====================
+// 核心更新：全局引入 roundDmg 变量以支撑共生机制
 function processRound() {
   let data = gameState; let logs = [];
-  const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', skip:'禁锢(跳过)' };
+  const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', symbiosis:'共生', skip:'禁锢(跳过)' };
   const cap = data.config.capacity; const allKeys = ['p1', 'p2', 'p3', 'p4'];
+
+  // 每回合清洗一次局内受损累计
+  for (let i = 0; i < allKeys.length; i++) { 
+     if(data[allKeys[i]]) data[allKeys[i]].roundDmg = 0; 
+  }
 
   let alive = [];
   for (let i = 0; i < allKeys.length; i++) {
@@ -756,7 +902,7 @@ function processRound() {
   for (let i = 0; i < alive.length; i++) {
     const p = alive[i]; let m = data[p].move; if (m === "") continue; 
     let mStr = (m === 'shoot' || m === 'fatal_shoot') ? `${data[p].val}发${moveMap[m]}` : moveMap[m];
-    if (data[p].target && cap > 2 && (m === 'shoot' || m === 'fatal_shoot' || m === 'ground_spike' || m === 'holy_light' || m === 'heretic_seal')) mStr += `(➡${data[p].target.replace('p', '').toUpperCase()})`;
+    if (data[p].target && cap > 2 && (m === 'shoot' || m === 'fatal_shoot' || m === 'ground_spike' || m === 'holy_light' || m === 'heretic_seal' || m === 'symbiosis')) mStr += `(➡${data[p].target.replace('p', '').toUpperCase()})`;
     actionStrs.push(`${p.replace('p', '').toUpperCase()}:${mStr}`);
   }
   const actionHeader = `【${actionStrs.join(' | ')}】`;
@@ -764,7 +910,7 @@ function processRound() {
   // 异教徒状态切换与反噬核算
   for (let i = 0; i < alive.length; i++) {
     const p = alive[i]; let player = data[p];
-    if (player.talent && player.talent.id === 'm_h3') {
+    if (hasTalent(player, 'm_h3')) {
       player.h3Timer -= 1;
       if (player.h3Timer <= 0) {
         if (player.h3State === '勿视') {
@@ -778,10 +924,10 @@ function processRound() {
       }
     }
     if (player.move !== "" && player.move !== "skip") {
-      if (player.talent && player.talent.id === 'm_h2') {
+      if (hasTalent(player, 'm_h2')) {
         player.actionCount = (player.actionCount || 0) + 1;
         if (player.actionCount % 3 === 0) {
-          player.hp -= 1;
+          player.hp -= 1; player.roundDmg += 1; // 加入伤害记录
           logs.push(`<span class="log-dmg">🩸 ${player.username || p.toUpperCase()} 遭受【蚀骨封行】反噬，流失 1 血！</span>`);
         }
       }
@@ -793,16 +939,16 @@ function processRound() {
     const p = alive[i]; let player = data[p]; if (player.move === "" || player.move === "skip") continue;
     if (player.move === 'reload') {
       let gain = 1;
-      if (player.talent && player.talent.id === 'm_d2') {
+      if (hasTalent(player, 'm_d2')) {
         if (player.talentCd === 0) {
-          if (player.hp > 1) { gain = 3; player.hp -= 1; player.talentCd = 3; logs.push(`${p.toUpperCase()} 触发嗜血，流失 1 血换取 3 弹药`); } 
+          if (player.hp > 1) { gain = 3; player.hp -= 1; player.roundDmg += 1; player.talentCd = 3; logs.push(`${p.toUpperCase()} 触发嗜血，流失 1 血换取 3 弹药`); } 
           else logs.push(`<span style="color:#d29922;">${p.toUpperCase()} 触发濒死保护，转为安全装弹</span>`);
         } else logs.push(`<span style="color:#8b949e;">${p.toUpperCase()} 嗜血冷却中，普通装弹</span>`);
       }
       player.ammo = Math.min(player.ammo + gain, player.maxAmmo);
     }
     if (player.move === 'shield') {
-      let gain = (player.talent && player.talent.id === 'm_a1') ? 2 : 1;
+      let gain = hasTalent(player, 'm_a1') ? 2 : 1;
       player.shield = Math.min(player.shield + gain, player.maxShield);
     }
     if (player.move === 'heal') {
@@ -827,14 +973,21 @@ function processRound() {
        player.talentCd = 4;
        let target = player.target;
        if (data[target] && data[target].hp > 0) {
-           data[target].silenced = 2; // 回合末减1，所以下回合为1，强制skip
+           data[target].silenced = 2; 
            logs.push(`<span class="log-dmg">🔮 ${p.toUpperCase()} 释放了【蚀骨封行】，死死禁锢了 ${data[target].username || target.toUpperCase()}！</span>`);
+       }
+    }
+    if (player.move === 'symbiosis') {
+       player.symCd = 4; // 3回合CD
+       let target = player.target;
+       if (data[target] && data[target].hp > 0) {
+           logs.push(`<span class="log-dmg">🔮 ${p.toUpperCase()} 释放了【共生】，强行将宿命与 ${data[target].username || target.toUpperCase()} 捆绑于一线！</span>`);
        }
     }
     if (player.move !== 'shoot' && player.move !== 'fatal_shoot' && player.ammo > player.maxAmmo) player.ammo = player.maxAmmo;
   }
 
-  // 攻击判定与 LastAttacker 记录
+  // 攻击判定与 LastAttacker 记录 (全面嵌入 roundDmg 收集)
   for (let i = 0; i < alive.length; i++) {
     const attKey = alive[i]; let att = data[attKey];
     if (!att || (att.move !== 'shoot' && att.move !== 'ground_spike' && att.move !== 'holy_light' && att.move !== 'fatal_shoot')) continue;
@@ -851,16 +1004,15 @@ function processRound() {
     }
 
     if (att.move === 'holy_light') {
-      att.holyCd = 6; def.hp -= 1; def.tookDamage = true; def.lastAttacker = attKey; att.hp = Math.min(att.hp + 1, att.maxHp);
+      att.holyCd = 6; def.hp -= 1; def.roundDmg += 1; def.tookDamage = true; def.lastAttacker = attKey; att.hp = Math.min(att.hp + 1, att.maxHp);
       logs.push(`<span class="log-safe">✨ ${attN} 圣光降临，抽取 ${defN} 1点生命！</span>`);
     }
 
     if (att.move === 'shoot' || att.move === 'fatal_shoot') {
-      const isPiercing = (att.talent && att.talent.id === 'm_d1'); 
+      const isPiercing = hasTalent(att, 'm_d1'); 
       let isFatal = (att.move === 'fatal_shoot'); let dmgToApply = att.val; let shouldProceedShoot = true;
 
-      // 勿听增伤
-      if (att.talent && att.talent.id === 'm_h3' && att.h3State === '勿听') { dmgToApply += 2; }
+      if (hasTalent(att, 'm_h3') && att.h3State === '勿听') { dmgToApply += 2; }
 
       if (isFatal) {
         att.fatalCd = 4; let roll = Math.random();
@@ -868,7 +1020,7 @@ function processRound() {
           att.ammo -= att.val; dmgToApply = att.val * 2; logs.push(`<span class="log-dmg">🩸 ${attN} 狂击暴走！造成致命伤害！</span>`);
         } else if (roll < 0.80) {
           shouldProceedShoot = false; let selfDmg = Math.floor(att.val / 2);
-          if (selfDmg > 0) { att.hp -= selfDmg; att.tookDamage = true; logs.push(`<span class="log-dmg">💀 ${attN} 狂击反噬！承受 ${selfDmg} 伤害！</span>`); } 
+          if (selfDmg > 0) { att.hp -= selfDmg; att.roundDmg += selfDmg; att.tookDamage = true; logs.push(`<span class="log-dmg">💀 ${attN} 狂击反噬！承受 ${selfDmg} 伤害！</span>`); } 
           else logs.push(`<span style="color:#d29922;">💀 ${attN} 狂击反噬，威力过小幸免于难。</span>`);
         } else {
           shouldProceedShoot = false; att.ammo -= att.val; logs.push(`<span style="color:#8b949e;">💨 ${attN} 狂击哑火...</span>`);
@@ -879,31 +1031,52 @@ function processRound() {
         if (def.move === 'duck' || def.move === 'ground_spike') logs.push(`<span class="log-safe">${defN} 避开了 ${attN} 的射击</span>`);
         else if (def.move === 'shield' && !isPiercing) {
           if (dmgToApply > def.shield) {
-            let dmg = dmgToApply - def.shield; def.hp -= dmg; def.shield = 0; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmg;
+            let dmg = dmgToApply - def.shield; def.hp -= dmg; def.roundDmg += dmg; def.shield = 0; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmg;
             logs.push(`<span class="log-dmg">${attN} 击穿 ${defN} 护盾造成 ${dmg} 伤</span>`);
           } else { def.shield -= dmgToApply; logs.push(`<span class="log-safe">${defN} 的护盾吸收了 ${attN} 的伤害</span>`); }
         } else {
-          def.hp -= dmgToApply; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmgToApply;
+          def.hp -= dmgToApply; def.roundDmg += dmgToApply; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmgToApply;
           let hitType = isPiercing ? '无视护盾' : '直接'; logs.push(`<span class="log-dmg">${attN} ${hitType}对 ${defN} 造成 ${dmgToApply} 伤</span>`);
         }
       }
     }
 
     if (att.move === 'ground_spike') {
-      if (def.move === 'rock') { att.hp -= 1; att.tookDamage = true; att.lastAttacker = defKey; logs.push(`<span class="log-dmg">${defN} 反弹地刺，${attN} 受到 1 伤</span>`); } 
-      else if (def.move === 'duck') { def.hp -= 2; def.tookDamage = true; def.lastAttacker = attKey; logs.push(`<span class="log-dmg">${attN} 的地刺贯穿了 ${defN}，造成 2 伤</span>`); }
+      if (def.move === 'rock') { att.hp -= 1; att.roundDmg += 1; att.tookDamage = true; att.lastAttacker = defKey; logs.push(`<span class="log-dmg">${defN} 反弹地刺，${attN} 受到 1 伤</span>`); } 
+      else if (def.move === 'duck') { def.hp -= 2; def.roundDmg += 2; def.tookDamage = true; def.lastAttacker = attKey; logs.push(`<span class="log-dmg">${attN} 的地刺贯穿了 ${defN}，造成 2 伤</span>`); }
     }
 
-    if (actualDmg > 0 && (att.move === 'shoot' || att.move === 'fatal_shoot') && att.talent && att.talent.id === 'm_d3') {
+    if (actualDmg > 0 && (att.move === 'shoot' || att.move === 'fatal_shoot') && hasTalent(att, 'm_d3')) {
       if (att.talentCd === 0) {
         if (att.hp < att.maxHp) { att.hp = Math.min(att.hp + 1, att.maxHp); att.talentCd = 3; logs.push(`<span class="log-dmg">😈 ${attN} 吞噬生效，吸取 1 点鲜血！</span>`); }
       }
     }
   }
 
+  // 核心更新：共生伤害传递与反噬核算 (生死结算前触发)
+  for (let i = 0; i < alive.length; i++) {
+     let p = alive[i]; let player = data[p];
+     if (player.move === 'symbiosis' && player.target) {
+        let t = player.target; let targetPlayer = data[t];
+        if (targetPlayer) {
+           let sharedDmg = player.roundDmg || 0;
+           if (sharedDmg > 0 && targetPlayer.hp > 0) {
+               targetPlayer.hp -= sharedDmg;
+               targetPlayer.roundDmg += sharedDmg;
+               logs.push(`<span class="log-dmg">🩸 【共生】触动！${player.username || p.toUpperCase()} 受到的 ${sharedDmg} 点伤害同步绞杀了 ${targetPlayer.username || t.toUpperCase()}！</span>`);
+           }
+           // 反噬代价
+           if (targetPlayer.hp <= 0 && player.hp > 0) {
+               player.hp = 0;
+               logs.push(`<span class="log-dmg">💀 【共生】反噬！因宿主 ${targetPlayer.username || t.toUpperCase()} 死亡，${player.username || p.toUpperCase()} 被强行扯入深渊一同殉葬！</span>`);
+           }
+        }
+     }
+  }
+
   for (let i = 0; i < alive.length; i++) {
     const p = alive[i]; let player = data[p];
-    if (player.talent && player.talent.id === 'm_a3' && player.talentCd === 0) {
+    if (hasTalent(player, 'm_a3') && player.talentCd === 0) {
       if (!player.tookDamage && player.move !== 'shoot' && player.move !== 'fatal_shoot' && player.hp < player.maxHp) {
         player.hp = Math.min(player.hp + 1, player.maxHp); player.talentCd = 3; logs.push(`<span class="log-safe">👼 ${p.toUpperCase()} 缓慢恢复了 1 点血量</span>`);
       }
@@ -911,26 +1084,31 @@ function processRound() {
     delete player.tookDamage; 
   }
 
-  // 苟且偷生与归光还魂 死亡结算
+  // 苟且偷生与归光还魂(m_a5) 死生结算核查
   for (let i = 0; i < allKeys.length; i++) {
     const k = allKeys[i];
     if (data[k] && data[k].joined && data[k].hp <= 0 && !data[k].lootedMark) {
-      if (data[k].talent && data[k].talent.id === 'm_a5' && data[k].talentCd === 0) {
+      if (hasTalent(data[k], 'm_a5') && data[k].reviveCharges > 0) {
+        data[k].reviveCharges = 0;
         data[k].reviveCount = (data[k].reviveCount || 0) + 1;
-        if (data[k].reviveCount === 1) {
-          data[k].maxHp = Math.max(1, data[k].maxHp - 2); data[k].maxShield = Math.max(0, data[k].maxShield - 2); data[k].maxAmmo = Math.max(1, data[k].maxAmmo - 2);
-          data[k].hp = data[k].maxHp; data[k].shield = 0; data[k].ammo = 0; data[k].talentCd = 51; 
-          logs.push(`<span class="log-safe">👼 ${data[k].username || k.toUpperCase()} 触发【归光还魂】，绝境逢生！(全上限-2)</span>`);
+        let pName = data[k].username || k.toUpperCase();
+        let penalty = cap === 2 ? 2 : (cap === 3 ? 3 : 4);
+        data[k].maxHp -= penalty; data[k].maxShield -= penalty;
+
+        if (data[k].maxHp <= 0 || data[k].maxShield <= 0) {
+           data[k].hp = 0; data[k].lootedMark = true; 
+           logs.push(`<span class="log-dmg">💀 ${pName} 触犯生命法则，教廷介入调查，将其彻底抹杀！(上限归零)</span>`);
         } else {
-          data[k].maxHp = 1; data[k].maxShield = 1; data[k].maxAmmo = 1;
-          data[k].hp = 1; data[k].shield = 0; data[k].ammo = 0; data[k].talentCd = 51;
-          logs.push(`<span class="log-safe">👼 ${data[k].username || k.toUpperCase()} 再次触发【归光还魂】！身躯残破，所有上限强制降为1！</span>`);
+           data[k].hp = data[k].maxHp; data[k].shield = 0; data[k].ammo = 0;
+           data[k].a5Recoveries = data[k].a5Recoveries || []; data[k].a5Recoveries.push(data.round + 15);
+           logs.push(`<span class="log-safe">👼 ${pName} 触发【归光还魂】，死而复生！(血盾上限-${penalty})</span>`);
         }
-      } else {
+      } 
+      if (data[k].hp <= 0) {
         data[k].lootedMark = true; 
         for (let j = 0; j < alive.length; j++) {
           let hk = alive[j]; let predator = data[hk];
-          if (predator.talent && predator.talent.id === 'm_h1' && data[k].talent && data[k].talent.category !== '数值') {
+          if (hasTalent(predator, 'm_h1') && (data[k].talent && data[k].talent.category !== '数值')) {
             let isKiller = (data[k].lastAttacker === hk);
             predator.pendingLoot = { talent: data[k].talent, cdPenalty: isKiller ? 0 : 1, fromName: data[k].username || k };
             logs.push(`<span style='color:var(--red)'>👺 ${predator.username || hk.toUpperCase()} 的【苟且偷生】盯上了死者遗留的机缘...</span>`);
@@ -952,6 +1130,7 @@ function processRound() {
       if (data[p].holyCd > 0) data[p].holyCd -= 1;
       if (data[p].dualCd > 0) data[p].dualCd -= 1;
       if (data[p].fatalCd > 0) data[p].fatalCd -= 1;
+      if (data[p].symCd > 0) data[p].symCd -= 1;
       if (data[p].silenced > 0) data[p].silenced -= 1;
     } 
   }
@@ -965,7 +1144,7 @@ function processRound() {
     data.log += `<div style="color:var(--red); font-weight:bold; margin-top:10px; background:rgba(248,81,73,0.1); padding:10px; border-radius:8px;">⚠️ 警告：第100回合【生体衰竭】，包扎永久禁用！</div>`;
   }
   if (data.round === 120) {
-    data.log += `<div style="color:var(--red); font-weight:bold; margin-top:10px; background:rgba(248,81,73,0.1); padding:10px; border-radius:8px;">💀 警告：第120回合【绝对枯竭】，全员血盾上限 -2！</div>`;
+    data.log += `<div style="color:var(--red); font-weight:bold; margin-top:10px; background:rgba(248,81,73,0.1); padding:10px; border-radius:8px;">💀 警告：第120回合【死亡竞赛】，全员血盾上限 -2！</div>`;
     for (let i = 0; i < allKeys.length; i++) {
       const p = allKeys[i];
       if (data[p] && data[p].hp > 0) {
@@ -975,6 +1154,32 @@ function processRound() {
         if (data[p].hp > data[p].maxHp) data[p].hp = data[p].maxHp;
       }
     }
+  }
+
+  // 归光还魂(m_a5) 充能逻辑
+  if (data.round === 80 || data.round === 120 || (data.round > 120 && (data.round - 120) % 40 === 0)) {
+     for (let i = 0; i < allKeys.length; i++) {
+        let pData = data[allKeys[i]];
+        if (pData && pData.hp > 0 && hasTalent(pData, 'm_a5')) {
+           pData.reviveCharges = 1;
+           data.log += `<div style="color:var(--green); font-weight:bold; margin-top:10px;">✨ 圣光补给：[${pData.username || allKeys[i].toUpperCase()}] 获得了1次归光还魂充能！</div>`;
+        }
+     }
+  }
+  // 归光还魂(m_a5) 15回合血盾上限恢复逻辑
+  for (let i = 0; i < allKeys.length; i++) {
+     let p = data[allKeys[i]];
+     if (p && p.hp > 0 && p.a5Recoveries && p.a5Recoveries.length > 0) {
+        let newRecoveries = [];
+        for (let r=0; r<p.a5Recoveries.length; r++) {
+           if (data.round === p.a5Recoveries[r]) {
+              let bonus = cap === 2 ? 1 : (cap === 3 ? 2 : 3);
+              p.maxHp += bonus; p.maxShield += bonus;
+              data.log += `<div style="color:var(--green); font-weight:bold; margin-top:10px;">✨ 生机复苏：[${p.username || allKeys[i].toUpperCase()}] 挺过虚弱期，血盾上限恢复 ${bonus} 点！</div>`;
+           } else { newRecoveries.push(p.a5Recoveries[r]); }
+        }
+        p.a5Recoveries = newRecoveries;
+     }
   }
 
   let stillAliveCount = 0; let winner = "";
@@ -1002,19 +1207,56 @@ function processRound() {
 }
 
 function handleRematchAction() {
-  if (isPvE) { selectMode('pve'); return; }
+  if (isPvE) { selectMode('pve', gameState.config.capacity); return; }
   if (roomRef && myRole && myRole !== 'spectator') roomRef.child('playAgain').child(myRole).set(true);
 }
+
+// ==========================================
+// 【核心 BUG 修复区】：深度数据清洗
+// ==========================================
 function resetRoomForRematch(oldData) {
   let cap = oldData.config.capacity; let newData = getInitialState(cap);
   const pKeys = ['p1', 'p2', 'p3', 'p4'];
+
   for (let i = 0; i < pKeys.length; i++) {
     const p = pKeys[i];
     if (oldData[p] && oldData[p].joined) {
       newData[p].joined = true; newData[p].ready = false; 
       newData[p].uid = oldData[p].uid; newData[p].username = oldData[p].username; newData[p].title = oldData[p].title;
+
+      // 【深度清洗】：确保彻底断绝上一局状态残留与机缘数值污染
+      newData[p].talent = null;
+      newData[p].extraTalent = null;
+      newData[p].pendingLoot = null;
+      newData[p].lootedMark = false;
+      newData[p].reviveCharges = 0;
+      newData[p].a5Recoveries = [];
+      newData[p].actionCount = 0;
+      newData[p].silenced = 0;
+      newData[p].h3State = '勿视';
+      newData[p].h3Timer = 0;
+      newData[p].symCd = 0;
+      newData[p].roundDmg = 0;
+      newData[p].rerolled = false;
+      newData[p].move = "";
+      newData[p].target = "";
+
+      // 强制覆盖基础三维上限，避免被上一局机缘永久拔高
+      let resetHp = 5, resetAmmo = 4, resetShield = 4;
+      if (cap === 4) { resetHp = 9; resetAmmo = 6; resetShield = 6; } 
+      else if (cap === 3) { resetHp = 7; resetAmmo = 5; resetShield = 5; }
+
+      newData[p].maxHp = resetHp; newData[p].hp = resetHp;
+      newData[p].maxAmmo = resetAmmo; newData[p].ammo = 0;
+      newData[p].maxShield = resetShield; newData[p].shield = 1;
     }
   }
+
+  newData.globalEvents = null;
+  newData.lastRoundLogs = null;
+  newData.round = 1;
+  newData.status = 'waiting';
+
   if (roomRef) roomRef.set(newData);
 }
 
@@ -1085,6 +1327,19 @@ function updateRematchPanel(data) {
   }
 }
 
+function buildTalentHtml(tObj, pData) {
+  let cdText = "";
+  if (tObj.id === 'm_a2' && pData.holyCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.holyCd})</span>`;
+  else if (tObj.id === 'm_a4' && pData.dualCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.dualCd})</span>`;
+  else if (tObj.id === 'm_d4' && pData.fatalCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.fatalCd})</span>`;
+  else if (tObj.id === 'm_h2' && pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
+  else if (tObj.id === 'm_h4' && pData.symCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.symCd})</span>`;
+  else if (tObj.id === 'm_a5' && pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
+  let tState = ""; if (tObj.id === 'm_h3') tState = ` [${pData.h3State}]`;
+  return `◈ ${tObj.name}${tState}${cdText}`;
+}
+
+// ==================== 局内卡片机缘色彩动态映射 ====================
 function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
   const cardEl = document.getElementById(`${pKey}-card`); const tsRadio = document.getElementById(`ts-${pKey}`);
   if (!isVisible || !pData) { if (cardEl) cardEl.style.display = 'none'; if (tsRadio) tsRadio.style.display = 'none'; return; } 
@@ -1092,10 +1347,8 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
 
   const hpEl = document.getElementById(`${pKey}-hp`); const ammoEl = document.getElementById(`${pKey}-ammo`);
   const shieldEl = document.getElementById(`${pKey}-shield`); const talentEl = document.getElementById(`${pKey}-talent-name`);
-  const connEl = document.getElementById(`${pKey}-conn`); const turnStatusEl = document.getElementById(`${pKey}-turn-status`);
   const playerLabelEl = document.getElementById(`${pKey}-label`);
 
-  // 防状态栏覆写
   if (playerLabelEl && pData.username) {
     let tStr = pData.title ? `[${pData.title}] ` : ""; let baseName = `${tStr}${pData.username}`;
     let existingNameSpan = document.getElementById(`${pKey}-name-display`);
@@ -1115,17 +1368,31 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
 
   if (talentEl) {
     if (pData.talent) {
-      let cdText = "";
-      if (pData.talent.id === 'm_a2' && pData.holyCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.holyCd})</span>`;
-      else if (pData.talent.id === 'm_a4' && pData.dualCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.dualCd})</span>`;
-      else if (pData.talent.id === 'm_d4' && pData.fatalCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.fatalCd})</span>`;
-      else if (pData.talent.id === 'm_h2' && pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
-      else if (pData.talent.id === 'm_a5' && pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
+      let tHtml = buildTalentHtml(pData.talent, pData);
+      if (pData.extraTalent) tHtml += `\n<span style="color:#d29922; font-size:0.9em;">+ ${buildTalentHtml(pData.extraTalent, pData)}</span>`;
+      talentEl.innerHTML = `${tHtml} <span style="opacity:0.8; font-size:1.1em; cursor:pointer;">ℹ️</span>`;
+      talentEl.style.display = 'inline-block'; 
 
-      let tState = ""; if (pData.talent.id === 'm_h3') tState = ` [${pData.h3State}]`;
-      talentEl.innerHTML = `◈ ${pData.talent.name}${tState}${cdText} <span style="opacity:0.8; font-size:1.1em; cursor:pointer;">ℹ️</span>`;
-      talentEl.style.display = 'inline-block'; talentEl.onclick = function() { showTalentDetail(pData.talent); };
-    } else { talentEl.innerText = "无机缘"; talentEl.style.display = 'none'; talentEl.onclick = null; }
+      let mainType = pData.talent.type;
+      if (mainType === 'angel') {
+        talentEl.style.background = 'rgba(63, 185, 80, 0.15)'; // --green
+        talentEl.style.border = '1px solid rgba(63, 185, 80, 0.4)';
+      } else if (mainType === 'demon') {
+        talentEl.style.background = 'rgba(163, 113, 247, 0.15)'; // --purple
+        talentEl.style.border = '1px solid rgba(163, 113, 247, 0.4)';
+      } else if (mainType === 'heretic') {
+        talentEl.style.background = 'rgba(248, 81, 73, 0.15)'; // --red
+        talentEl.style.border = '1px solid rgba(248, 81, 73, 0.4)';
+      }
+
+      talentEl.onclick = function() { showTalentDetail(pData.extraTalent || pData.talent); };
+    } else { 
+      talentEl.innerText = "无机缘"; 
+      talentEl.style.display = 'none'; 
+      talentEl.style.background = '';
+      talentEl.style.border = '';
+      talentEl.onclick = null; 
+    }
   }
 
   if (pData.hp <= 0) {
@@ -1180,7 +1447,6 @@ function updateActionPanel(data) {
   if (myRole && data[myRole] && data[myRole].hp > 0 && data.status === 'playing') {
     const myP = data[myRole];
 
-    // 80回合重铸阻塞
     if (data.round === 80) {
        let allRerolled = true;
        if (cap >= 1 && data.p1 && data.p1.hp > 0 && !data.p1.rerolled) allRerolled = false;
@@ -1196,7 +1462,6 @@ function updateActionPanel(data) {
        }
     }
 
-    // 异教徒夺取机缘 UI 拦截
     if (myP.pendingLoot) {
        if (actionControls) actionControls.style.display = 'none';
        if (actionWaiting) actionWaiting.style.display = 'none';
@@ -1210,7 +1475,6 @@ function updateActionPanel(data) {
        if (lootPanel) lootPanel.style.display = 'none';
     }
 
-    // 蚀骨封行 禁锢 UI 拦截
     if (myP.silenced > 0) {
        if (actionControls) actionControls.style.display = 'none';
        if (actionWaiting) actionWaiting.style.display = 'none';
@@ -1229,42 +1493,54 @@ function updateActionPanel(data) {
       if (actionControls) actionControls.style.display = 'block';
       if (actionWaiting) actionWaiting.style.display = 'none';
 
-      const myAmmo = myP.ammo; const myTalent = myP.talent; const maxA = myP.maxAmmo;
+      const myAmmo = myP.ammo; const maxA = myP.maxAmmo;
 
       for (let i = 1; i <= maxA; i++) {
         const btn = document.getElementById(`btn-s${i}`); if (!btn) continue;
         let disabled = false;
         if (i > myAmmo) disabled = true;
-        if (myTalent && myTalent.id === 'm_a1' && i > 2) disabled = true;
-        if (myTalent && myTalent.id === 'n_d1' && data.round === 1) disabled = true;
-        if (myTalent && myTalent.id === 'm_h3' && myP.h3State === '勿视') disabled = true;
+        if (hasTalent(myP, 'm_a1') && i > 2) disabled = true;
+        if (hasTalent(myP, 'n_d1') && data.round === 1) disabled = true;
+        if (hasTalent(myP, 'm_h3') && myP.h3State === '勿视') disabled = true;
         if (disabled) { btn.classList.add('disabled'); } else { btn.classList.remove('disabled'); }
       }
 
       const fatalRow = document.getElementById('fatal-shoot-controls'); const fatalLabel = document.getElementById('fatal-shoot-label');
       if (fatalRow) {
-        if (myTalent && myTalent.id === 'm_d4') {
+        if (hasTalent(myP, 'm_d4')) {
           fatalRow.style.display = 'flex'; let globalFatalDisabled = false;
           if (myP.fatalCd > 0) { globalFatalDisabled = true; if(fatalLabel) { fatalLabel.innerText = `狂击(CD:${myP.fatalCd}):`; } } 
           else { if(fatalLabel) { fatalLabel.innerText = `蚀命狂击:`; } }
           for (let i = 1; i <= maxA; i++) {
             const btnF = document.getElementById(`btn-f${i}`); if (!btnF) continue;
             let disabled = globalFatalDisabled; if (i > myAmmo) disabled = true;
-            if (myTalent && myTalent.id === 'm_h3' && myP.h3State === '勿视') disabled = true;
+            if (hasTalent(myP, 'm_h3') && myP.h3State === '勿视') disabled = true;
             if (disabled) { btnF.classList.add('disabled'); } else { btnF.classList.remove('disabled'); }
           }
         } else { fatalRow.style.display = 'none'; }
       }
 
-      // 异教徒专属面板
       const hereticRow = document.getElementById('heretic-action-controls');
       if (hereticRow) {
-         if (myTalent && myTalent.id === 'm_h2') {
-            hereticRow.style.display = 'block';
+         if (hasTalent(myP, 'm_h2') || hasTalent(myP, 'm_h4')) {
+            hereticRow.style.display = 'flex';
+
             const sealBtn = document.getElementById('btn-heretic-seal');
             if (sealBtn) {
-               if (myP.talentCd > 0) { sealBtn.classList.add('disabled'); sealBtn.innerText = `蚀骨封行 (CD:${myP.talentCd})`; }
-               else { sealBtn.classList.remove('disabled'); sealBtn.innerText = `蚀骨封行 (禁锢敌方一回合)`; }
+               if(hasTalent(myP, 'm_h2')) {
+                 sealBtn.style.display = 'inline-block';
+                 if (myP.talentCd > 0) { sealBtn.classList.add('disabled'); sealBtn.innerText = `蚀骨封行 (CD:${myP.talentCd})`; }
+                 else { sealBtn.classList.remove('disabled'); sealBtn.innerText = `蚀骨封行 (禁锢敌方一回合)`; }
+               } else sealBtn.style.display = 'none';
+            }
+
+            const symBtn = document.getElementById('btn-symbiosis');
+            if (symBtn) {
+               if(hasTalent(myP, 'm_h4')) {
+                 symBtn.style.display = 'inline-block';
+                 if (myP.symCd > 0) { symBtn.classList.add('disabled'); symBtn.innerText = `共生 (CD:${myP.symCd})`; }
+                 else { symBtn.classList.remove('disabled'); symBtn.innerText = `共生 (绑定血量共享伤害)`; }
+               } else symBtn.style.display = 'none';
             }
          } else { hereticRow.style.display = 'none'; }
       }
@@ -1272,7 +1548,7 @@ function updateActionPanel(data) {
       const healBtn = document.querySelector('.t-heal');
       if (healBtn) {
         if (data.round >= 100) { healBtn.classList.add('disabled'); healBtn.innerText = '包扎 (已衰竭)'; } 
-        else if (myTalent && myTalent.id === 'm_a2') { healBtn.classList.add('disabled'); healBtn.innerText = '包扎 (已禁用)'; } 
+        else if (hasTalent(myP, 'm_a2')) { healBtn.classList.add('disabled'); healBtn.innerText = '包扎 (已禁用)'; } 
         else if (myP.healCd > 0) { healBtn.classList.add('disabled'); healBtn.innerText = `包扎 (CD:${myP.healCd})`; } 
         else if (myP.shield < 2 || myP.hp >= myP.maxHp) { healBtn.classList.add('disabled'); healBtn.innerText = '包扎'; } 
         else { healBtn.classList.remove('disabled'); healBtn.innerText = '包扎'; }
@@ -1281,15 +1557,15 @@ function updateActionPanel(data) {
       const shieldBtn = document.getElementById('btn-shield');
       const duckBtn = document.getElementById('btn-duck');
       if (shieldBtn) {
-         if (myTalent && myTalent.id === 'm_h3' && myP.h3State === '勿听') { shieldBtn.classList.add('disabled'); } else { shieldBtn.classList.remove('disabled'); }
+         if (hasTalent(myP, 'm_h3') && myP.h3State === '勿听') { shieldBtn.classList.add('disabled'); } else { shieldBtn.classList.remove('disabled'); }
       }
       if (duckBtn) {
-         if (myTalent && myTalent.id === 'm_h3' && myP.h3State === '勿听') { duckBtn.classList.add('disabled'); } else { duckBtn.classList.remove('disabled'); }
+         if (hasTalent(myP, 'm_h3') && myP.h3State === '勿听') { duckBtn.classList.add('disabled'); } else { duckBtn.classList.remove('disabled'); }
       }
 
       const holyBtn = document.getElementById('btn-holy');
       if (holyBtn) {
-        if (myTalent && myTalent.id === 'm_a2') {
+        if (hasTalent(myP, 'm_a2')) {
           holyBtn.style.display = 'inline-block';
           if (myP.holyCd > 0) { holyBtn.classList.add('disabled'); holyBtn.innerText = `圣光 (CD:${myP.holyCd})`; } 
           else { holyBtn.classList.remove('disabled'); holyBtn.innerText = `圣光`; }
@@ -1298,7 +1574,7 @@ function updateActionPanel(data) {
 
       const dualBtn = document.getElementById('btn-dual');
       if (dualBtn) {
-        if (myTalent && myTalent.id === 'm_a4') {
+        if (hasTalent(myP, 'm_a4')) {
           dualBtn.style.display = 'inline-block';
           if (myP.dualCd > 0) { dualBtn.classList.add('disabled'); dualBtn.innerText = `渡灵 (CD:${myP.dualCd})`; } 
           else { dualBtn.classList.remove('disabled'); dualBtn.innerText = `渡灵`; }

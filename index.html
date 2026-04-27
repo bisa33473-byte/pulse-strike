@@ -10,7 +10,6 @@
 </head>
 <body>
 
-  <!-- ==================== 1. 全局跨服邀请通知 ==================== -->
   <div id="global-invite-alert" style="display: none;">
     <span id="invite-alert-text">特工 XXX 邀请你加入房间</span>
     <div>
@@ -19,7 +18,6 @@
     </div>
   </div>
 
-  <!-- ==================== 2. 账号认证终端 ==================== -->
   <div id="auth-overlay" class="fixed-overlay">
     <div id="auth-box" class="modal-content">
       <h1 class="main-title" style="font-size: 2.5em;">PULSE STRIKE</h1>
@@ -38,12 +36,10 @@
     </div>
   </div>
 
-  <!-- ==================== 3. 全球主城大厅 (Hub) ==================== -->
   <div id="hub-overlay" style="display: none;" class="fixed-overlay">
     <div id="hub-box" class="modal-content" style="max-width: 650px; width: 95%;">
       
       <div style="display: flex; flex-direction: column; gap: 20px;">
-        <!-- 个人资料卡 -->
         <div style="background: rgba(88,166,255,0.1); padding: 15px; border-radius: 12px; border: 1px solid var(--blue); text-align: left;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
@@ -66,19 +62,23 @@
             <button class="mode-btn" style="background: #1f6feb; margin:0;" onclick="openFriendsModal()">👥 特工通讯 (好友)</button>
           </div>
           
-          <!-- 更新日志视窗 -->
           <div id="changelog-module" style="grid-column: 1/-1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 15px; text-align: left;">
-            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.0)</div>
+            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.1)</div>
             <div class="rules-body" style="max-height: 140px; overflow-y: auto; font-size: 0.85em; padding-right: 8px;">
-              <p><strong>[新增] 异教徒 (Heretic) 阵营降临：</strong></p>
+              <p><strong>[新增] 异教徒核心天赋 - 共生：</strong></p>
               <ul>
-                <li><strong>苟且偷生</strong>：半血开局，可夺取死者的机缘。亲自击杀完美继承，否则继承机缘CD+1。</li>
-                <li><strong>蚀骨封行</strong>：强行禁锢一名敌人下回合所有行动。代价为每操作3次反噬1血。</li>
-                <li><strong>勿视勿听</strong>：双相循环机缘，周期性在“极致护盾/禁止射击”与“高额伤害/禁止防御”间切换。</li>
+                <li>专属动作【共生】：与指定目标血量绑定一回合，伤害同等传递。若宿主死亡则一同殉葬。引入了战局内极为凶险的同归于尽打法。</li>
               </ul>
-              <p><strong>[优化] 命运祈祷机制：</strong>现于天使、恶魔、异教徒三系中随机展现两系供玩家抉择。</p>
-              <p><strong>[优化] 归光还魂：</strong>移除初始惩罚，复活后的属性剥夺更具压迫感。</p>
-              <p><strong>[回归] 界面与日志：</strong>重新加入日志视窗与详情规则按钮，彻底适配移动端防裁切引擎。</p>
+              <p><strong>[新增] 单机演练模式全面升级：</strong></p>
+              <ul>
+                <li>打破了 1v1 的限制，现已全面支持 1v2（三人局）和 1v3（四人局）AI 混战模式，随时可以进行大规模战术模拟。</li>
+                <li>AI 行为树升级，现支持多目标智能索敌与仇恨判定，AI 也会使用新机缘了。</li>
+              </ul>
+              <p><strong>[优化] UI 与底层逻辑：</strong></p>
+              <ul>
+                <li>重构了选模式的 UI 层级，将不同人数的单机模式统一收纳至独立子菜单，视觉更清爽。</li>
+                <li>修复了“再来一局”时机缘与三维数值会异常继承给下一把的恶性 Bug。</li>
+              </ul>
             </div>
           </div>
 
@@ -91,7 +91,6 @@
     </div>
   </div>
 
-  <!-- ==================== 4. 社交与排行榜模态框 ==================== -->
   <div id="friends-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
     <div class="modal-content" style="max-width: 400px; width: 90%;" onclick="event.stopPropagation()">
       <h2 style="color: var(--blue); margin-top: 0; text-align: center;">👥 特工通讯网</h2>
@@ -129,19 +128,18 @@
     </div>
   </div>
 
-  <!-- ==================== 5. 游戏模式选择大厅 ==================== -->
   <div id="mode-overlay" style="display: none;" class="fixed-overlay">
     <div id="mode-select-box">
       <h1 class="main-title">PULSE STRIKE</h1>
       <p class="sub-title">Combat Protocol Hub</p>
       
       <div id="step-version">
-        <button class="mode-btn ver-stable" onclick="selectVersion('stable')">正式版 (Stable)</button>
-        <button class="mode-btn ver-beta" onclick="selectVersion('beta')">测试版 (Beta) 🧪</button>
+        <button class="mode-btn ver-stable" onclick="selectVersion('stable')">基础版</button>
+        <button class="mode-btn ver-beta" onclick="selectVersion('beta')">进阶版 🧪</button>
       </div>
 
       <div id="step-mode" style="display: none;">
-        <button class="mode-btn mode-pve" onclick="selectMode('pve')">单机实战演练 (1v1)</button>
+        <button class="mode-btn mode-pve" style="background:#0969da;" onclick="showPveOptions()">单机演练 (PvE)</button>
         <button class="mode-btn mode-pvp" onclick="selectMode('pvp')">全网联机乱斗 (多人)</button>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
           <button class="mode-btn info-btn" onclick="toggleRules(true)" style="margin:0;">📖 战术法则</button>
@@ -149,10 +147,17 @@
         </div>
         <button class="back-link" onclick="goBackToHub()">← 返回主城中心</button>
       </div>
+
+      <div id="step-pve" style="display: none;">
+        <h3 style="color: #c9d1d9; margin-bottom: 15px; margin-top: 0; font-size: 1.1em; text-align: center;">选择演练规模</h3>
+        <button class="mode-btn mode-pve" style="background:#0969da;" onclick="selectMode('pve', 2)">单机演练 (1v1 双人局)</button>
+        <button class="mode-btn mode-pve" style="background:#1f6feb;" onclick="selectMode('pve', 3)">单机演练 (1v2 三人局)</button>
+        <button class="mode-btn mode-pve" style="background:#3b82f6;" onclick="selectMode('pve', 4)">单机演练 (1v3 四人局)</button>
+        <button class="back-link" onclick="hidePveOptions()">← 返回模式选择</button>
+      </div>
     </div>
   </div>
 
-  <!-- 图鉴与规则弹窗 -->
   <div id="codex-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
     <div class="modal-content codex-content" onclick="event.stopPropagation()">
       <h2 style="color: var(--gold); text-align: center; margin-top: 0;">📚 阵营机缘图鉴</h2>
@@ -173,14 +178,24 @@
         <ul>
           <li style="color:var(--gold);"><strong>第 80 回合</strong>：全员强制开启【机缘重铸】，可重新进行命运祈祷与选择。</li>
           <li style="color:var(--red);"><strong>第 100 回合</strong>：生体衰竭，全场永久禁止包扎！</li>
-          <li style="color:var(--purple);"><strong>第 120 回合</strong>：绝对枯竭，全员护盾上限与血量上限各强制 -2！</li>
+          <li style="color:var(--purple);"><strong>第 120 回合</strong>：死亡竞赛，全员护盾上限与血量上限各强制 -2！</li>
         </ul>
       </div>
       <button class="close-modal" onclick="toggleRules(false)">我已了解</button>
     </div>
   </div>
 
-  <!-- 战前集结房间 -->
+  <div id="talent-detail-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
+    <div class="modal-content" style="max-width: 400px; width: 90%;" onclick="event.stopPropagation()">
+      <h2 id="td-name" style="color: var(--gold); margin-top: 0; text-align: center;">机缘名称</h2>
+      <div style="text-align: center; margin-bottom: 15px;">
+        <span id="td-type" class="talent-type-badge">类型</span>
+      </div>
+      <p id="td-desc" style="color: #c9d1d9; font-size: 0.95em; line-height: 1.6; white-space: pre-wrap; text-align: center;"></p>
+      <button class="close-modal" onclick="document.getElementById('talent-detail-modal').style.display='none'">关闭</button>
+    </div>
+  </div>
+
   <div id="waiting-room" style="display: none;">
     <div id="spectator-banner-lobby" style="display:none; background:var(--gold); color:#000; font-weight:bold; text-align:center; padding:10px; border-radius:8px; margin-bottom:20px;">
       👁️ 观战模式：您正在等待场上玩家开战...
@@ -198,7 +213,6 @@
     <button class="back-link" onclick="exitGame()">退出房间</button>
   </div>
 
-  <!-- 祈祷与机缘面板 -->
   <div id="prayer-overlay" style="display: none;" class="fixed-overlay">
     <div id="prayer-box" class="modal-content" style="max-width: 480px;">
       <h2 class="talent-title" id="prayer-title-text">🙏 命运祈祷</h2>
@@ -216,7 +230,6 @@
     </div>
   </div>
 
-  <!-- ==================== 核心游戏对战界面 ==================== -->
   <div id="game-container" style="display: none;">
     <div id="spectator-banner-game" style="display:none; background:var(--gold); color:#000; font-weight:bold; text-align:center; padding:10px; border-radius:8px; margin-bottom:15px; letter-spacing: 1px;">
       👁️ 观战模式：您正在实时观看激烈交锋
@@ -240,7 +253,6 @@
       </div>
     </div>
 
-    <!-- 玩家属性动态展示板 (2x2 手机自适应网格) -->
     <div class="stats-board" id="stats-board">
       <div class="player-card" id="p1-card">
         <div class="player-label" id="p1-label"><span id="p1-name-display">PLAYER A</span> <span id="p1-turn-status" class="turn-status"></span> <span id="p1-conn" class="conn-status">(离线)</span></div>
@@ -280,10 +292,8 @@
       <button id="btn-rematch-action" class="setup-btn host-btn" style="padding: 12px 25px; font-size: 1.1em;"></button>
     </div>
 
-    <!-- 操作面板区 -->
     <div class="action-panel" id="action-panel-container">
       
-      <!-- 异教徒夺取机缘专享面板 -->
       <div id="loot-panel" style="display: none; text-align: center; padding: 20px; background: rgba(210,153,34,0.1); border-radius: 12px; border: 1px solid rgba(210,153,34,0.3); margin-bottom: 15px;">
         <h3 style="color:var(--gold); margin-top:0;">👺 苟且偷生：发现可掠夺的机缘！</h3>
         <p id="loot-text" style="font-weight:bold; font-size:1.1em; color:#fff; white-space:pre-wrap;"></p>
@@ -293,7 +303,6 @@
         </div>
       </div>
 
-      <!-- 被蚀骨封行禁锢面板 -->
       <div id="silenced-panel" style="display: none; text-align: center; padding: 30px; background: rgba(163,113,247,0.15); border-radius: 12px; border: 1px solid rgba(163,113,247,0.4); margin-bottom: 15px;">
         <h3 style="color:var(--purple); margin-top:0;">🔮 你已被【蚀骨封行】禁锢</h3>
         <p style="color:#c9d1d9; margin-bottom: 20px;">本回合你无法进行任何战术动作与射击。</p>
@@ -324,15 +333,17 @@
             <div id="fatal-shoot-btns" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
           </div>
 
+          <!-- 异教徒专属技能组 -->
           <div class="shoot-row" id="heretic-action-controls" style="display:none; margin-top: 15px; background: rgba(248, 81, 73, 0.1); padding: 8px; border-radius: 8px; border: 1px solid rgba(248, 81, 73, 0.3);">
-            <button class="btn-t" id="btn-heretic-seal" style="background:var(--red) !important; width:100%;" onclick="handleInput('heretic_seal')">蚀骨封行 (锁定并封印敌方一回合，CD:4)</button>
+            <button class="btn-t" id="btn-heretic-seal" style="background:var(--red) !important; width:100%; margin-bottom: 8px;" onclick="handleInput('heretic_seal')">蚀骨封行</button>
+            <button class="btn-t" id="btn-symbiosis" style="background:#cf222e !important; width:100%;" onclick="handleInput('symbiosis')">共生 (绑定血量共享伤害)</button>
           </div>
         </div>
 
         <div class="action-group tactical-zone">
           <div class="tactical-grid">
-            <button class="btn-t t-def" onclick="handleInput('shield')">防御</button>
-            <button class="btn-t t-duck" onclick="handleInput('duck')">趴下</button>
+            <button class="btn-t t-def" id="btn-shield" onclick="handleInput('shield')">防御</button>
+            <button class="btn-t t-duck" id="btn-duck" onclick="handleInput('duck')">趴下</button>
             <button class="btn-t t-spike" onclick="handleInput('ground_spike')">地刺</button>
             <button class="btn-t t-rock" onclick="handleInput('rock')">石头</button>
             <button class="btn-t t-heal" id="btn-heal" onclick="handleInput('heal')">包扎</button>

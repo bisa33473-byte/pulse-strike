@@ -24,7 +24,6 @@ body {
 }
 
 /* ==================== 核心 UI 防截断引擎 ==================== */
-/* 所有覆盖层强制使用 column 和 flex-start，让长内容能够自然向下延伸并滚动 */
 .fixed-overlay,
 #auth-overlay,
 #hub-overlay,
@@ -40,7 +39,7 @@ body {
   z-index: 2000; 
   display: flex; 
   flex-direction: column;
-  justify-content: flex-start; /* 关键防裁切：强制从顶部开始排版 */
+  justify-content: flex-start; 
   align-items: center; 
   overflow-y: auto;
   padding: 40px 20px;
@@ -63,7 +62,7 @@ body {
   max-width: 420px; 
   border: 1px solid var(--border); 
   box-shadow: 0 0 30px rgba(88, 166, 255, 0.2); 
-  margin: auto; /* 关键防裁切：内容短时居中，内容长时撑开并允许滚动 */
+  margin: auto; 
   flex-shrink: 0;
   text-align: center;
 }
@@ -140,7 +139,8 @@ body {
 /* ==================== 局内卡片 ==================== */
 .active-talent { 
   font-size: 0.75em; color: var(--gold); margin-bottom: 12px; font-weight: bold; background: rgba(210, 153, 34, 0.1); 
-  padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(210, 153, 34, 0.3); cursor: pointer; transition: 0.2s; user-select: none; 
+  padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(210, 153, 34, 0.3); cursor: pointer; transition: 0.2s; user-select: none; 
+  white-space: pre-wrap; line-height: 1.5;
 }
 .active-talent:hover { filter: brightness(1.3); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(210, 153, 34, 0.2); }
 .turn-status { font-size: 1.2em; font-weight: normal; margin-left: 5px; }
@@ -238,7 +238,6 @@ body {
 
   .main-title { font-size: 2.2em; }
 
-  /* 4人联机变成 2x2 网格，拒绝一长条滑动 */
   .lobby-card, .player-card { min-width: 45%; padding: 12px; margin-bottom: 10px; }
   .lobby-grid, .stats-board { gap: 8px; }
 
