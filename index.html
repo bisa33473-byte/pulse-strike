@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pulse Strike - 异教徒之影 (v15.0 稳定版)</title>
+  <title>Pulse Strike - 异教徒之影 (v15.2 稳定版)</title>
   <link href="style.css" rel="stylesheet" type="text/css" />
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
@@ -63,22 +63,18 @@
           </div>
           
           <div id="changelog-module" style="grid-column: 1/-1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 15px; text-align: left;">
-            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.1)</div>
+            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.2)</div>
             <div class="rules-body" style="max-height: 140px; overflow-y: auto; font-size: 0.85em; padding-right: 8px;">
-              <p><strong>[新增] 异教徒核心天赋 - 共生：</strong></p>
+              <p><strong>[平衡] 圣魔体系重构：</strong></p>
               <ul>
-                <li>专属动作【共生】：与指定目标血量绑定一回合，伤害同等传递。若宿主死亡则一同殉葬。引入了战局内极为凶险的同归于尽打法。</li>
+                <li><strong>圣戒 (加强)</strong>：使用【圣光】当回合进入霸体，免疫一切外界伤害。</li>
+                <li><strong>蚀命狂击 (削弱)</strong>：单次最高消耗弹药限制为 3 发。</li>
+                <li><strong>蚀骨封行 (重做)</strong>：改为充能制(上限2次，每5回合恢复)。使用后自身延迟3回合受到反噬伤害。</li>
               </ul>
-              <p><strong>[新增] 单机演练模式全面升级：</strong></p>
-              <ul>
-                <li>打破了 1v1 的限制，现已全面支持 1v2（三人局）和 1v3（四人局）AI 混战模式，随时可以进行大规模战术模拟。</li>
-                <li>AI 行为树升级，现支持多目标智能索敌与仇恨判定，AI 也会使用新机缘了。</li>
-              </ul>
-              <p><strong>[优化] UI 与底层逻辑：</strong></p>
-              <ul>
-                <li>重构了选模式的 UI 层级，将不同人数的单机模式统一收纳至独立子菜单，视觉更清爽。</li>
-                <li>修复了“再来一局”时机缘与三维数值会异常继承给下一把的恶性 Bug。</li>
-              </ul>
+              <p><strong>[新增] 命运祈祷 - 无神论者：</strong></p>
+              <p>祈祷阶段新增常驻选项“无神论者”，选择后所有机缘纯随机分配，不带有任何阵营偏好。</p>
+              <p><strong>[优化] UI 与体验：</strong></p>
+              <p>优化了手机端对局界面的卡片排版，改为双列紧凑布局，告别频繁滑屏。</p>
             </div>
           </div>
 
@@ -173,7 +169,7 @@
       <div class="rules-body" style="text-align: left; font-size: 0.95em;">
         <p><strong>1. 基础：</strong>装弹(+1弹药)，防御(+1护盾)。射击消耗弹药，溢出破甲扣血。</p>
         <p><strong>2. 战术克制：</strong>趴下躲射击，但被地刺克制受 2 伤。地刺被石头反弹 1 伤。</p>
-        <p><strong>3. 命运祈祷：</strong>每次抽取机缘前，系统将随机展示两个信仰选项（天使/恶魔/异教徒），抉择后可提升 50% 对应阵营的降临概率。</p>
+        <p><strong>3. 命运祈祷：</strong>每次抽取机缘前，系统将随机展示信仰选项，抉择后可提升对应阵营的降临概率。</p>
         <p><strong>4. 终极深渊法则：</strong></p>
         <ul>
           <li style="color:var(--gold);"><strong>第 80 回合</strong>：全员强制开启【机缘重铸】，可重新进行命运祈祷与选择。</li>
@@ -214,9 +210,9 @@
   </div>
 
   <div id="prayer-overlay" style="display: none;" class="fixed-overlay">
-    <div id="prayer-box" class="modal-content" style="max-width: 480px;">
+    <div id="prayer-box" class="modal-content" style="max-width: 550px;">
       <h2 class="talent-title" id="prayer-title-text">🙏 命运祈祷</h2>
-      <p class="talent-subtitle" id="prayer-subtitle-text">万物皆有回响。系统已为你呈现两种信仰，选择其一，大幅提升该阵营降临概率。</p>
+      <p class="talent-subtitle" id="prayer-subtitle-text">万物皆有回响。系统已为你呈现信仰选项，选择其一可大幅提升该阵营降临概率，或选择成为无神论者。</p>
       <div id="prayer-options-container" style="display: flex; gap: 15px; margin-top: 20px;"></div>
       <button class="back-link" id="prayer-keep-btn" style="display:none; margin-top: 20px; font-weight:bold; color:var(--red);" onclick="confirmPrayer('keep')">放弃重铸，保留当前机缘</button>
     </div>

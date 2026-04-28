@@ -238,17 +238,26 @@ body {
 
   .main-title { font-size: 2.2em; }
 
-  .lobby-card, .player-card { min-width: 45%; padding: 12px; margin-bottom: 10px; }
-  .lobby-grid, .stats-board { gap: 8px; }
+  /* 修复手机端排版，改为网格双列布局 */
+  .stats-board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .player-card { min-width: 0; padding: 12px; margin-bottom: 0; flex: none; }
 
-  .stat-item { font-size: 0.9em; }
+  .stat-item { font-size: 0.8em; margin: 4px 0; }
+  .player-label { font-size: 0.7em; margin-bottom: 4px; }
+  .active-talent { font-size: 0.65em; padding: 4px; line-height: 1.3; }
+  .turn-status { font-size: 1em; }
   .talent-card h4 { font-size: 1em; }
   .talent-card p { font-size: 0.75em; }
 
   .tactical-grid { grid-template-columns: repeat(auto-fit, minmax(65px, 1fr)); gap: 8px; }
-  .btn-t { padding: 10px 5px; font-size: 0.85em; }
+  .btn-t { padding: 8px 4px; font-size: 0.8em; }
 
   .header-left .logo-text { font-size: 1.2em; }
   #round-badge { font-size: 0.75em; padding: 4px 8px; }
   #exit-game-btn { font-size: 0.75em; padding: 4px 8px; }
+
+  /* 祈祷按钮在手机上更紧凑 */
+  #prayer-options-container { flex-direction: column; gap: 10px; }
+  #prayer-options-container button { padding: 12px; flex-direction: row; justify-content: flex-start; text-align: left; }
+  #prayer-options-container button span:first-child { margin-bottom: 0; margin-right: 15px; }
 }

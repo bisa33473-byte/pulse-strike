@@ -295,9 +295,10 @@ function getInitialState(capacity) {
   state.p4 = createBasePlayer(capacity >= 4 ? hp : 0, hp, maxAmmo, maxShield);
   return state;
 }
+
 function createBasePlayer(currentHp, maxHp, maxAmmo, maxShield) {
   return { uid: "", username: "", title: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", 
-    talent: null, extraTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, rerolled: false, 
+    talent: null, extraTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, sealCharges: 1, sealDmgTimer: 0, rerolled: false, 
     reviveCount: 0, reviveCharges: 0, a5Recoveries: [], actionCount: 0, silenced: 0, h3State: '勿视', h3Timer: 0, roundDmg: 0,
     pendingLoot: null, lootedMark: false 
   };
@@ -311,17 +312,17 @@ const TALENT_POOL = {
   ],
   mechanism: [
     { id: 'm_a1', type: 'angel', category: '机制', name: '圣盾坚壁', desc: '使用防御时获得 2 层护盾。\n代价：单次射击最高被限制为 2 发。' },
-    { id: 'm_a2', type: 'angel', category: '机制', name: '圣戒', desc: '专属动作【圣光】(每5回合可用)：无视防御，强行抽取目标1血量反哺自身。\n代价：本局游戏彻底丧失【包扎】能力。' },
+    { id: 'm_a2', type: 'angel', category: '机制', name: '圣戒', desc: '专属动作【圣光】(每5回合可用)：无视防御抽取目标1血量反哺自身。发动该动作的回合，自身进入霸体状态，免疫一切外界伤害。\n代价：丧失【包扎】能力。' },
     { id: 'm_a3', type: 'angel', category: '机制', name: '神圣复苏', desc: '回合末，若本回合未受伤害且未射击，恢复 1 点血。\n(触发后进入 2 回合冷却)' },
     { id: 'm_a4', type: 'angel', category: '机制', name: '双向渡灵', desc: '专属动作【渡灵】(每4回合可用)：无消耗。50%概率恢复自身1血，50%概率随机给一名存活敌人恢复1血。' },
     { id: 'm_a5', type: 'angel', category: '机制', name: '归光还魂', desc: '受致命伤时复活并回满血但清空弹盾。复活后血盾上限降低(双人-2/三人-3/四人-4)，15回合后上限部分恢复。若上限归零则被教廷彻底抹杀。\n充能：开局自带1次，第80、120回合及之后每40回合补充至1次。' },
     { id: 'm_d1', type: 'demon', category: '机制', name: '深渊魔弹', desc: '你的射击必定穿甲（无视护盾直接扣血）。\n代价：你永久无法使用防御动作。' },
     { id: 'm_d2', type: 'demon', category: '机制', name: '嗜血狂热', desc: '装弹时流失 1 血量，但获得 3 发子弹。\n(触发后 2 回合内只能普通装弹；1血时触发濒死保护停止扣血)' },
     { id: 'm_d3', type: 'demon', category: '机制', name: '贪婪吞噬', desc: '射击若对目标造成掉血，吸取 1 点生命。\n(触发后进入 2 回合冷却) 代价：血量上限 -2，护盾上限固定为 2。' },
-    { id: 'm_d4', type: 'demon', category: '机制', name: '蚀命狂击', desc: '专属动作【狂击】(每3回合可用)：60%概率伤害翻倍；20%射击失效且自身受一半伤害反噬(不耗弹)；20%哑火空枪(耗弹)。' },
+    { id: 'm_d4', type: 'demon', category: '机制', name: '蚀命狂击', desc: '专属动作【狂击】(每3回合可用)：单次最多消耗3发弹药。60%概率伤害翻倍；20%射击失效且反噬一半伤害(不耗弹)；20%哑火空枪(耗弹)。' },
 
     { id: 'm_h1', type: 'heretic', category: '机制', name: '苟且偷生', desc: '被动：拥有此机缘时最多可再持有一个机缘（场上唯一候选）。此机缘本身不可被替换。生命值上限减半。在场上有玩家死亡后，可夺取其非数值类机缘替换自身的第二机缘。亲自击杀完美继承，否则继承CD+1。' },
-    { id: 'm_h2', type: 'heretic', category: '机制', name: '蚀骨封行', desc: '专属动作【封行】(每4回合可用)：指定一位玩家，使其下回合被禁锢无法采取任何行动。\n代价：自己每进行3步任意操作，会被反噬1点生命(无视防御)。' },
+    { id: 'm_h2', type: 'heretic', category: '机制', name: '蚀骨封行', desc: '专属动作【封行】(上限2次，每5回合恢复1次，使用后CD3回合)：指定一位玩家，使其下回合被禁锢。\n代价：每次使用后经过3回合，自身会受1点反噬伤害(无视防御)。' },
     { id: 'm_h3', type: 'heretic', category: '机制', name: '勿视勿听', desc: '被动：血盾弹上限及初始值均+1。周期性切换状态。初始【勿视】:禁用开火，护盾+1，持续5回合。\n【勿听】:禁用防御与趴下，造成伤害+2，持续3回合。' },
     { id: 'm_h4', type: 'heretic', category: '机制', name: '共生', desc: '专属动作【共生】(每3回合可用)：与指定目标血量绑定一回合。若你本回合受到攻击扣血，对方将同时扣除同等血量。\n代价：若对方在本回合死亡，你将同时殉葬死亡。' }
   ]
@@ -480,21 +481,32 @@ function triggerPrayerPhase(isReroll) {
   const pool = ['angel', 'demon', 'heretic'];
   const shuffled = pool.sort(() => 0.5 - Math.random());
   const pick2 = shuffled.slice(0, 2);
+  pick2.push('atheist'); // 加入无神论者选项
+
   const container = document.getElementById('prayer-options-container');
   container.innerHTML = "";
 
   pick2.forEach(bias => {
     const btn = document.createElement('button');
-    btn.className = "setup-btn"; btn.style.cssText = "flex:1; padding:20px; display:flex; flex-direction:column; align-items:center;";
-    let icon = bias === 'angel' ? '👼' : (bias === 'demon' ? '😈' : '👺');
-    let label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆深渊' : '追随禁忌');
-    let color = bias === 'angel' ? 'var(--green)' : (bias === 'demon' ? 'var(--purple)' : 'var(--red)');
+    btn.className = "setup-btn"; btn.style.cssText = "flex:1; padding:15px; display:flex; flex-direction:column; align-items:center;";
+    let icon, label, color, boostName;
+
+    if (bias === 'atheist') {
+      icon = '🎲'; label = '无神论者'; color = '#6e7681'; boostName = '纯随机分配';
+    } else {
+      icon = bias === 'angel' ? '👼' : (bias === 'demon' ? '😈' : '👺');
+      label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆听深渊' : '追随禁忌');
+      color = bias === 'angel' ? 'var(--green)' : (bias === 'demon' ? 'var(--purple)' : 'var(--red)');
+      let faction = bias === 'angel' ? '天使' : (bias === 'demon' ? '恶魔' : '异教徒');
+      boostName = `${faction}机缘 +50%`;
+    }
+
     btn.style.background = color; btn.style.borderColor = color;
-    let boostName = bias === 'angel' ? '天使' : (bias === 'demon' ? '恶魔' : '异教徒');
-    btn.innerHTML = `<span style='font-size:2em; margin-bottom:10px;'>${icon}</span><span style='font-weight:bold;'>${label}</span><span style='font-size:0.75em; opacity:0.8; margin-top:5px;'>(${boostName}机缘 +50%)</span>`;
+    btn.innerHTML = `<span style='font-size:2em; margin-bottom:10px;'>${icon}</span><span style='font-weight:bold;'>${label}</span><span style='font-size:0.75em; opacity:0.8; margin-top:5px;'>(${boostName})</span>`;
     btn.onclick = () => showTalentSelection(isReroll, bias);
     container.appendChild(btn);
   });
+
   document.getElementById('prayer-overlay').style.display = 'flex';
   document.getElementById('prayer-keep-btn').style.display = isReroll ? 'inline-block' : 'none';
   if (isReroll) {
@@ -502,7 +514,7 @@ function triggerPrayerPhase(isReroll) {
     document.getElementById('prayer-subtitle-text').innerText = "命运之轮再次转动，请选择祈祷方向，或直接保留当前机缘。";
   } else {
     document.getElementById('prayer-title-text').innerText = "🙏 命运祈祷";
-    document.getElementById('prayer-subtitle-text').innerText = "万物皆有回响，系统为你呈现两种信仰。选择其一，大幅提升该阵营降临概率。";
+    document.getElementById('prayer-subtitle-text').innerText = "万物皆有回响，系统已为你呈现信仰选项，选择其一可大幅提升该阵营降临概率，或选择成为无神论者。";
   }
 }
 
@@ -528,9 +540,11 @@ function showTalentSelection(isReroll, bias) {
     if (item.id === 'm_h1' && gameState.config.h1_candidate !== myRole) continue;
 
     let weight = 1;
-    if (bias === 'angel' && item.type === 'angel') weight = 3;
-    if (bias === 'demon' && item.type === 'demon') weight = 3;
-    if (bias === 'heretic' && item.type === 'heretic') weight = 3;
+    if (bias !== 'atheist') {
+      if (bias === 'angel' && item.type === 'angel') weight = 3;
+      if (bias === 'demon' && item.type === 'demon') weight = 3;
+      if (bias === 'heretic' && item.type === 'heretic') weight = 3;
+    }
     for (let w = 0; w < weight; w++) weightedPool.push(item);
   }
 
@@ -574,7 +588,7 @@ function applyTalentMods(playerData, t) {
     if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
     playerData.extraTalent = null;
   }
-  else if (t.id === 'm_h2') { playerData.actionCount = 0; }
+  else if (t.id === 'm_h2') { playerData.sealCharges = 1; playerData.sealDmgTimer = 0; }
   else if (t.id === 'm_h3') {
     playerData.maxHp += 1; playerData.hp += 1; playerData.maxShield += 1; playerData.shield += 1; playerData.maxAmmo += 1; playerData.ammo += 1;
     playerData.h3State = '勿视'; playerData.h3Timer = 5;
@@ -603,11 +617,17 @@ function applyTalent(t, isReroll) {
                if (gameState[pk].extraTalent) removeTalentMods(gameState[pk], gameState[pk].extraTalent, gameState.config);
             } else { removeTalentMods(gameState[pk], gameState[pk].talent, gameState.config); }
 
-            const aiBias = ['angel', 'demon', 'heretic'][Math.floor(Math.random()*3)];
+            const aiBiasOptions = ['angel', 'demon', 'heretic', 'atheist'];
+            const aiBias = aiBiasOptions[Math.floor(Math.random() * aiBiasOptions.length)];
             const weightedPool = []; const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
             for (let j = 0; j < allItems.length; j++) {
               if (allItems[j].id === 'm_h1' && gameState.config.h1_candidate !== pk) continue;
-              let weight = 1; if (aiBias === 'angel' && allItems[j].type === 'angel') weight = 3; if (aiBias === 'demon' && allItems[j].type === 'demon') weight = 3; if (aiBias === 'heretic' && allItems[j].type === 'heretic') weight = 3;
+              let weight = 1; 
+              if (aiBias !== 'atheist') {
+                  if (aiBias === 'angel' && allItems[j].type === 'angel') weight = 3; 
+                  if (aiBias === 'demon' && allItems[j].type === 'demon') weight = 3; 
+                  if (aiBias === 'heretic' && allItems[j].type === 'heretic') weight = 3;
+              }
               for (let w = 0; w < weight; w++) weightedPool.push(allItems[j]);
             }
             const aiT = weightedPool[Math.floor(Math.random() * weightedPool.length)];
@@ -721,7 +741,6 @@ function checkRoundStart() {
   }
 }
 
-// 核心更新：允许为共生选择目标并接管单机 AI 循环
 function handleInput(move, val = 0) {
   if (!gameState || !myRole || myRole === 'spectator' || !gameState[myRole]) return;
   const myData = gameState[myRole];
@@ -757,9 +776,11 @@ function handleInput(move, val = 0) {
   if (move === 'fatal_shoot') {
     if (!hasTalent(myData, 'm_d4')) return alert("非法操作！");
     if (myData.fatalCd > 0) return alert("【狂击】冷却中，还需 " + myData.fatalCd + " 回合！");
+    if (val > 3) return alert("【狂击】单次最多消耗 3 发弹药！");
   }
   if (move === 'heretic_seal') {
     if (!hasTalent(myData, 'm_h2')) return alert("非法操作！");
+    if (myData.sealCharges <= 0) return alert("【蚀骨封行】可用次数不足！");
     if (myData.talentCd > 0) return alert("【蚀骨封行】冷却中，还需 " + myData.talentCd + " 回合！");
   }
   if (move === 'symbiosis') {
@@ -810,7 +831,7 @@ function handleInput(move, val = 0) {
   }
 }
 
-// 核心更新：AI 行为树兼容多敌方数组，并学习释放共生
+// 核心更新：AI 行为树兼容多敌方数组，并学习释放共生，优化狂击使用上限
 function getSmartAiMove(aiKey, enemiesArray) {
   const ai = gameState[aiKey]; 
   // 为防御与针对性评估选择一个主要假想敌（优先真实玩家 P1）
@@ -833,7 +854,7 @@ function getSmartAiMove(aiKey, enemiesArray) {
     if (ai.hp <= 3 && Math.random() < 0.7) return { move: 'dual_heal', val: 0 };
     allowedMoves.push('dual_heal');
   }
-  if (hasTalent(ai, 'm_h2') && ai.talentCd === 0) {
+  if (hasTalent(ai, 'm_h2') && ai.talentCd === 0 && ai.sealCharges > 0) {
     if (human && human.hp > 0) return { move: 'heretic_seal', val: 0 };
   }
   if (hasTalent(ai, 'm_h4') && ai.symCd === 0 && enemiesArray.length > 0) {
@@ -864,8 +885,9 @@ function getSmartAiMove(aiKey, enemiesArray) {
     let canFatal = (hasTalent(ai, 'm_d4') && ai.fatalCd === 0);
     if (human && maxVal > effectiveShield && (maxVal - effectiveShield) >= human.hp) return { move: 'shoot', val: maxVal };
     if (canFatal && human) {
-      if ((maxVal * 2) > effectiveShield && (maxVal * 2 - effectiveShield) >= human.hp && Math.random() < 0.7) return { move: 'fatal_shoot', val: maxVal };
-      if (Math.random() < 0.4) return { move: 'fatal_shoot', val: maxVal };
+      let fatalMax = Math.min(maxVal, 3);
+      if ((fatalMax * 2) > effectiveShield && (fatalMax * 2 - effectiveShield) >= human.hp && Math.random() < 0.7) return { move: 'fatal_shoot', val: fatalMax };
+      if (Math.random() < 0.4) return { move: 'fatal_shoot', val: fatalMax };
     }
     allowedMoves.push('shoot', 'shoot');
   } else {
@@ -876,6 +898,7 @@ function getSmartAiMove(aiKey, enemiesArray) {
   if (chosenMove === 'shoot' || chosenMove === 'fatal_shoot') {
     let maxVal = ai.ammo; if (maxVal > ai.maxAmmo) maxVal = ai.maxAmmo;
     if (hasTalent(ai, 'm_a1') && maxVal > 2) maxVal = 2;
+    if (chosenMove === 'fatal_shoot') maxVal = Math.min(maxVal, 3);
     shootVal = Math.floor(Math.random() * maxVal) + 1;
   }
   return { move: chosenMove, val: shootVal };
@@ -907,7 +930,17 @@ function processRound() {
   }
   const actionHeader = `【${actionStrs.join(' | ')}】`;
 
-  // 异教徒状态切换与反噬核算
+  // 1. 预处理：记录圣光霸体状态
+  let isInvincible = {};
+  for(let i=0; i<alive.length; i++) {
+      let p = alive[i]; let player = data[p];
+      if (player.move === 'holy_light' && hasTalent(player, 'm_a2')) {
+          isInvincible[p] = true;
+          logs.push(`<span class="log-safe">👼 ${player.username || p.toUpperCase()} 沐浴在圣光之中，本回合进入霸体状态！</span>`);
+      }
+  }
+
+  // 2. 异教徒状态切换
   for (let i = 0; i < alive.length; i++) {
     const p = alive[i]; let player = data[p];
     if (hasTalent(player, 'm_h3')) {
@@ -923,18 +956,9 @@ function processRound() {
         }
       }
     }
-    if (player.move !== "" && player.move !== "skip") {
-      if (hasTalent(player, 'm_h2')) {
-        player.actionCount = (player.actionCount || 0) + 1;
-        if (player.actionCount % 3 === 0) {
-          player.hp -= 1; player.roundDmg += 1; // 加入伤害记录
-          logs.push(`<span class="log-dmg">🩸 ${player.username || p.toUpperCase()} 遭受【蚀骨封行】反噬，流失 1 血！</span>`);
-        }
-      }
-    }
   }
 
-  // 自我资源与特殊状态结算
+  // 3. 自我资源与特殊状态结算
   for (let i = 0; i < alive.length; i++) {
     const p = alive[i]; let player = data[p]; if (player.move === "" || player.move === "skip") continue;
     if (player.move === 'reload') {
@@ -970,7 +994,9 @@ function processRound() {
       }
     }
     if (player.move === 'heretic_seal') {
-       player.talentCd = 4;
+       player.talentCd = 4; // 3回合CD
+       player.sealCharges -= 1;
+       player.sealDmgTimer = 3; // 延迟3回合反噬
        let target = player.target;
        if (data[target] && data[target].hp > 0) {
            data[target].silenced = 2; 
@@ -987,7 +1013,7 @@ function processRound() {
     if (player.move !== 'shoot' && player.move !== 'fatal_shoot' && player.ammo > player.maxAmmo) player.ammo = player.maxAmmo;
   }
 
-  // 攻击判定与 LastAttacker 记录 (全面嵌入 roundDmg 收集)
+  // 4. 攻击判定与 LastAttacker 记录
   for (let i = 0; i < alive.length; i++) {
     const attKey = alive[i]; let att = data[attKey];
     if (!att || (att.move !== 'shoot' && att.move !== 'ground_spike' && att.move !== 'holy_light' && att.move !== 'fatal_shoot')) continue;
@@ -1004,8 +1030,14 @@ function processRound() {
     }
 
     if (att.move === 'holy_light') {
-      att.holyCd = 6; def.hp -= 1; def.roundDmg += 1; def.tookDamage = true; def.lastAttacker = attKey; att.hp = Math.min(att.hp + 1, att.maxHp);
-      logs.push(`<span class="log-safe">✨ ${attN} 圣光降临，抽取 ${defN} 1点生命！</span>`);
+      att.holyCd = 6; 
+      if (isInvincible[defKey]) {
+          logs.push(`<span class="log-safe">🛡️ ${defN} 处于圣光霸体，免疫了 ${attN} 的抽取！</span>`);
+      } else {
+          def.hp -= 1; def.roundDmg += 1; def.tookDamage = true; def.lastAttacker = attKey; 
+          att.hp = Math.min(att.hp + 1, att.maxHp);
+          logs.push(`<span class="log-safe">✨ ${attN} 圣光降临，抽取 ${defN} 1点生命！</span>`);
+      }
     }
 
     if (att.move === 'shoot' || att.move === 'fatal_shoot') {
@@ -1028,7 +1060,10 @@ function processRound() {
       } else { att.ammo -= att.val; }
 
       if (shouldProceedShoot) {
-        if (def.move === 'duck' || def.move === 'ground_spike') logs.push(`<span class="log-safe">${defN} 避开了 ${attN} 的射击</span>`);
+        if (isInvincible[defKey]) {
+            logs.push(`<span class="log-safe">🛡️ ${defN} 处于圣光霸体，无视了 ${attN} 的射击！</span>`);
+        }
+        else if (def.move === 'duck' || def.move === 'ground_spike') logs.push(`<span class="log-safe">${defN} 避开了 ${attN} 的射击</span>`);
         else if (def.move === 'shield' && !isPiercing) {
           if (dmgToApply > def.shield) {
             let dmg = dmgToApply - def.shield; def.hp -= dmg; def.roundDmg += dmg; def.shield = 0; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmg;
@@ -1042,8 +1077,20 @@ function processRound() {
     }
 
     if (att.move === 'ground_spike') {
-      if (def.move === 'rock') { att.hp -= 1; att.roundDmg += 1; att.tookDamage = true; att.lastAttacker = defKey; logs.push(`<span class="log-dmg">${defN} 反弹地刺，${attN} 受到 1 伤</span>`); } 
-      else if (def.move === 'duck') { def.hp -= 2; def.roundDmg += 2; def.tookDamage = true; def.lastAttacker = attKey; logs.push(`<span class="log-dmg">${attN} 的地刺贯穿了 ${defN}，造成 2 伤</span>`); }
+      if (def.move === 'rock') { 
+          if (!isInvincible[attKey]) {
+              att.hp -= 1; att.roundDmg += 1; att.tookDamage = true; att.lastAttacker = defKey; logs.push(`<span class="log-dmg">${defN} 反弹地刺，${attN} 受到 1 伤</span>`); 
+          } else {
+              logs.push(`<span class="log-safe">${defN} 反弹地刺，但 ${attN} 的圣光霸体免疫了反弹伤害！</span>`);
+          }
+      } 
+      else if (def.move === 'duck') { 
+          if (isInvincible[defKey]) {
+              logs.push(`<span class="log-safe">🛡️ ${defN} 处于圣光霸体，无视了地刺攻击！</span>`);
+          } else {
+              def.hp -= 2; def.roundDmg += 2; def.tookDamage = true; def.lastAttacker = attKey; logs.push(`<span class="log-dmg">${attN} 的地刺贯穿了 ${defN}，造成 2 伤</span>`); 
+          }
+      }
     }
 
     if (actualDmg > 0 && (att.move === 'shoot' || att.move === 'fatal_shoot') && hasTalent(att, 'm_d3')) {
@@ -1053,7 +1100,7 @@ function processRound() {
     }
   }
 
-  // 核心更新：共生伤害传递与反噬核算 (生死结算前触发)
+  // 5. 共生伤害传递与反噬核算 (生死结算前触发)
   for (let i = 0; i < alive.length; i++) {
      let p = alive[i]; let player = data[p];
      if (player.move === 'symbiosis' && player.target) {
@@ -1061,9 +1108,13 @@ function processRound() {
         if (targetPlayer) {
            let sharedDmg = player.roundDmg || 0;
            if (sharedDmg > 0 && targetPlayer.hp > 0) {
-               targetPlayer.hp -= sharedDmg;
-               targetPlayer.roundDmg += sharedDmg;
-               logs.push(`<span class="log-dmg">🩸 【共生】触动！${player.username || p.toUpperCase()} 受到的 ${sharedDmg} 点伤害同步绞杀了 ${targetPlayer.username || t.toUpperCase()}！</span>`);
+               if (isInvincible[t]) {
+                   logs.push(`<span class="log-safe">🛡️ 圣光庇护着 ${targetPlayer.username || t.toUpperCase()}，免疫了共生的诅咒传递！</span>`);
+               } else {
+                   targetPlayer.hp -= sharedDmg;
+                   targetPlayer.roundDmg += sharedDmg;
+                   logs.push(`<span class="log-dmg">🩸 【共生】触动！${player.username || p.toUpperCase()} 受到的 ${sharedDmg} 点伤害同步绞杀了 ${targetPlayer.username || t.toUpperCase()}！</span>`);
+               }
            }
            // 反噬代价
            if (targetPlayer.hp <= 0 && player.hp > 0) {
@@ -1072,6 +1123,27 @@ function processRound() {
            }
         }
      }
+  }
+
+  // 6. 蚀骨封行回合末核算(延迟反噬与充能恢复)
+  for (let i = 0; i < allKeys.length; i++) {
+      let pData = data[allKeys[i]];
+      if (pData && pData.hp > 0 && hasTalent(pData, 'm_h2')) {
+          if (pData.sealDmgTimer > 0) {
+              pData.sealDmgTimer -= 1;
+              if (pData.sealDmgTimer === 0) {
+                  pData.hp -= 1;
+                  pData.roundDmg += 1;
+                  logs.push(`<span class="log-dmg">🩸 【蚀骨封行】反噬期至！${pData.username || allKeys[i].toUpperCase()} 吐出一口黑血，流失 1 点生命！</span>`);
+              }
+          }
+          if (data.round % 5 === 0) {
+              if (pData.sealCharges < 2) {
+                  pData.sealCharges += 1;
+                  logs.push(`<span class="log-safe">🔮 邪力汇聚：${pData.username || allKeys[i].toUpperCase()} 恢复了 1 次【蚀骨封行】使用机会！</span>`);
+              }
+          }
+      }
   }
 
   for (let i = 0; i < alive.length; i++) {
@@ -1084,7 +1156,7 @@ function processRound() {
     delete player.tookDamage; 
   }
 
-  // 苟且偷生与归光还魂(m_a5) 死生结算核查
+  // 7. 苟且偷生与归光还魂(m_a5) 死生结算核查
   for (let i = 0; i < allKeys.length; i++) {
     const k = allKeys[i];
     if (data[k] && data[k].joined && data[k].hp <= 0 && !data[k].lootedMark) {
@@ -1236,6 +1308,8 @@ function resetRoomForRematch(oldData) {
       newData[p].h3State = '勿视';
       newData[p].h3Timer = 0;
       newData[p].symCd = 0;
+      newData[p].sealCharges = 1;
+      newData[p].sealDmgTimer = 0;
       newData[p].roundDmg = 0;
       newData[p].rerolled = false;
       newData[p].move = "";
@@ -1438,7 +1512,9 @@ function updateActionPanel(data) {
      let htmlStr = `<span>射击强度:</span>`; let fatalStr = ``;
      for (let i = 1; i <= data[myRole].maxAmmo; i++) {
         htmlStr += `<button class="s-btn" id="btn-s${i}" onclick="handleInput('shoot', ${i})">${i}</button>`;
-        fatalStr += `<button class="s-btn" id="btn-f${i}" onclick="handleInput('fatal_shoot', ${i})" style="background:var(--purple);">${i}</button>`;
+        if (i <= 3) {
+            fatalStr += `<button class="s-btn" id="btn-f${i}" onclick="handleInput('fatal_shoot', ${i})" style="background:var(--purple);">${i}</button>`;
+        }
      }
      if (shootControls) shootControls.innerHTML = htmlStr; 
      if (fatalShootBtns) fatalShootBtns.innerHTML = fatalStr; 
@@ -1511,7 +1587,9 @@ function updateActionPanel(data) {
           fatalRow.style.display = 'flex'; let globalFatalDisabled = false;
           if (myP.fatalCd > 0) { globalFatalDisabled = true; if(fatalLabel) { fatalLabel.innerText = `狂击(CD:${myP.fatalCd}):`; } } 
           else { if(fatalLabel) { fatalLabel.innerText = `蚀命狂击:`; } }
-          for (let i = 1; i <= maxA; i++) {
+
+          let fatalMax = Math.min(maxA, 3);
+          for (let i = 1; i <= fatalMax; i++) {
             const btnF = document.getElementById(`btn-f${i}`); if (!btnF) continue;
             let disabled = globalFatalDisabled; if (i > myAmmo) disabled = true;
             if (hasTalent(myP, 'm_h3') && myP.h3State === '勿视') disabled = true;
@@ -1529,8 +1607,10 @@ function updateActionPanel(data) {
             if (sealBtn) {
                if(hasTalent(myP, 'm_h2')) {
                  sealBtn.style.display = 'inline-block';
-                 if (myP.talentCd > 0) { sealBtn.classList.add('disabled'); sealBtn.innerText = `蚀骨封行 (CD:${myP.talentCd})`; }
-                 else { sealBtn.classList.remove('disabled'); sealBtn.innerText = `蚀骨封行 (禁锢敌方一回合)`; }
+                 let chargesStr = `(剩余:${myP.sealCharges||0}次)`;
+                 if (myP.sealCharges <= 0) { sealBtn.classList.add('disabled'); sealBtn.innerText = `蚀骨封行 (次数不足)`; }
+                 else if (myP.talentCd > 0) { sealBtn.classList.add('disabled'); sealBtn.innerText = `蚀骨封行 (CD:${myP.talentCd})`; }
+                 else { sealBtn.classList.remove('disabled'); sealBtn.innerText = `蚀骨封行 ${chargesStr}`; }
                } else sealBtn.style.display = 'none';
             }
 
@@ -1568,7 +1648,7 @@ function updateActionPanel(data) {
         if (hasTalent(myP, 'm_a2')) {
           holyBtn.style.display = 'inline-block';
           if (myP.holyCd > 0) { holyBtn.classList.add('disabled'); holyBtn.innerText = `圣光 (CD:${myP.holyCd})`; } 
-          else { holyBtn.classList.remove('disabled'); holyBtn.innerText = `圣光`; }
+          else { holyBtn.classList.remove('disabled'); holyBtn.innerText = `圣光 (带霸体)`; }
         } else { holyBtn.style.display = 'none'; }
       }
 
