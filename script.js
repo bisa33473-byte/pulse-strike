@@ -13,6 +13,7 @@ const db = firebase.database();
 let myRole = null, roomRef = null, currentRoomId = "", isPvE = false;
 let gameState = null, gameVersion = 'stable', isProcessing = false; 
 let isRerollingGlobal = false;
+let selectedPocketIndex = -1;
 
 // ==================== 用户认证与缓存 ====================
 let currentUser = { uid: "", username: "", title: "初阶特工", stats: { total: 0, wins: 0 }, friends: {} };
@@ -273,6 +274,33 @@ function hasTalent(p, tid) {
   return false;
 }
 
+function getBaseCd(talentId) {
+    const map = { 'm_a2':5, 'm_a4':4, 'm_d4':3, 'm_h2':5, 'm_h4':3, 'm_a6':10 };
+    return map[talentId] || 3;
+}
+
+function getTalentCdKey(id) {
+    if (id === 'm_a2') return 'holyCd';
+    if (id === 'm_a4') return 'dualCd';
+    if (id === 'm_d4') return 'fatalCd';
+    if (id === 'm_h2') return 'talentCd'; 
+    if (id === 'm_h4') return 'symCd';
+    if (id === 'm_a6') return 'stealthCd';
+    return 'talentCd';
+}
+
+function isMoveFromTalent(move, talentId) {
+    const map = {
+        'm_a2': 'holy_light',
+        'm_a4': 'dual_heal',
+        'm_d4': 'fatal_shoot',
+        'm_h2': 'heretic_seal',
+        'm_h4': 'symbiosis',
+        'm_a6': 'stealth_action'
+    };
+    return map[talentId] === move;
+}
+
 // ==================== 数据生成器 ====================
 function getInitialState(capacity) {
   let hp = 5; let maxAmmo = 4; let maxShield = 4;
@@ -298,8 +326,11 @@ function getInitialState(capacity) {
 
 function createBasePlayer(currentHp, maxHp, maxAmmo, maxShield) {
   return { uid: "", username: "", title: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", 
-    talent: null, extraTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, sealCharges: 1, sealDmgTimer: 0, rerolled: false, 
+    talent: null, extraTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, stealthCd: 0, 
+    sealCharges: 1, sealDmgTimer: 0, rerolled: false, 
     reviveCount: 0, reviveCharges: 0, a5Recoveries: [], actionCount: 0, silenced: 0, h3State: '勿视', h3Timer: 0, roundDmg: 0,
+    pocketInventory: [], pocketUses: 0, h1SurviveTimer: 0, extraTalentTimer: 0,
+    stealthTimer: 0, stealthDefUsed: false, autoStealthUsed: false,
     pendingLoot: null, lootedMark: false 
   };
 }
@@ -316,13 +347,14 @@ const TALENT_POOL = {
     { id: 'm_a3', type: 'angel', category: '机制', name: '神圣复苏', desc: '回合末，若本回合未受伤害且未射击，恢复 1 点血。\n(触发后进入 2 回合冷却)' },
     { id: 'm_a4', type: 'angel', category: '机制', name: '双向渡灵', desc: '专属动作【渡灵】(每4回合可用)：无消耗。50%概率恢复自身1血，50%概率随机给一名存活敌人恢复1血。' },
     { id: 'm_a5', type: 'angel', category: '机制', name: '归光还魂', desc: '受致命伤时复活并回满血但清空弹盾。复活后血盾上限降低(双人-2/三人-3/四人-4)，15回合后上限部分恢复。若上限归零则被教廷彻底抹杀。\n充能：开局自带1次，第80、120回合及之后每40回合补充至1次。' },
+    { id: 'm_a6', type: 'angel', category: '机制', name: '缄默无声', desc: '血量上限-2。专属动作【缄默】(每10回合可用)：进入持续5回合的隐匿状态。隐匿期间所有CD冻结，无法开火或装弹，无法被指定为攻击目标，持续伤害Buff不生效；期间防卫技能(防御/趴下)只能使用1次。\n(血量首次低于3时会自动触发一次免费隐匿)' },
     { id: 'm_d1', type: 'demon', category: '机制', name: '深渊魔弹', desc: '你的射击必定穿甲（无视护盾直接扣血）。\n代价：你永久无法使用防御动作。' },
     { id: 'm_d2', type: 'demon', category: '机制', name: '嗜血狂热', desc: '装弹时流失 1 血量，但获得 3 发子弹。\n(触发后 2 回合内只能普通装弹；1血时触发濒死保护停止扣血)' },
     { id: 'm_d3', type: 'demon', category: '机制', name: '贪婪吞噬', desc: '射击若对目标造成掉血，吸取 1 点生命。\n(触发后进入 2 回合冷却) 代价：血量上限 -2，护盾上限固定为 2。' },
     { id: 'm_d4', type: 'demon', category: '机制', name: '蚀命狂击', desc: '专属动作【狂击】(每3回合可用)：单次最多消耗3发弹药。60%概率伤害翻倍；20%射击失效且反噬一半伤害(不耗弹)；20%哑火空枪(耗弹)。' },
 
-    { id: 'm_h1', type: 'heretic', category: '机制', name: '苟且偷生', desc: '被动：拥有此机缘时最多可再持有一个机缘（场上唯一候选）。此机缘本身不可被替换。生命值上限减半。在场上有玩家死亡后，可夺取其非数值类机缘替换自身的第二机缘。亲自击杀完美继承，否则继承CD+1。' },
-    { id: 'm_h2', type: 'heretic', category: '机制', name: '蚀骨封行', desc: '专属动作【封行】(上限2次，每5回合恢复1次，使用后CD3回合)：指定一位玩家，使其下回合被禁锢。\n代价：每次使用后经过3回合，自身会受1点反噬伤害(无视防御)。' },
+    { id: 'm_h1', type: 'heretic', category: '机制', name: '苟且偷生', desc: '被动：全场唯一候选。获取时三维上限-2。场上其他玩家死亡时，机缘自动收入你的“万能口袋”。\n【苟且形态】(1个机缘)：每3回合自动回盾；遇袭自动消耗护盾抵御非穿甲伤害；造成的伤害-1。\n【偷生形态】(2个机缘)：可消耗提取次数从口袋装备机缘，需进行等价交换(一项上限-1另一项+1)。数值机缘持续8回合，机制机缘可用1次，结束后退回口袋并恢复苟且形态。' },
+    { id: 'm_h2', type: 'heretic', category: '机制', name: '蚀骨封行', desc: '专属动作【封行】(上限2次，每5回合恢复1次，使用后CD3回合)：指定一位玩家，使其下回合被禁锢，且受封行影响期间受到的伤害减半且免疫致死。\n代价：每次使用后经过3回合，自身会受1点反噬伤害(无视防御)。' },
     { id: 'm_h3', type: 'heretic', category: '机制', name: '勿视勿听', desc: '被动：血盾弹上限及初始值均+1。周期性切换状态。初始【勿视】:禁用开火，护盾+1，持续5回合。\n【勿听】:禁用防御与趴下，造成伤害+2，持续3回合。' },
     { id: 'm_h4', type: 'heretic', category: '机制', name: '共生', desc: '专属动作【共生】(每3回合可用)：与指定目标血量绑定一回合。若你本回合受到攻击扣血，对方将同时扣除同等血量。\n代价：若对方在本回合死亡，你将同时殉葬死亡。' }
   ]
@@ -568,10 +600,11 @@ function removeTalentMods(playerData, t, config) {
   else if (t.id === 'm_d3') {
     playerData.maxHp += 2; playerData.hp += 2; playerData.maxShield = config.maxShield;
     if (gameState && gameState.round >= 120) { playerData.maxShield -= 2; if (playerData.maxShield < 0) playerData.maxShield = 0; playerData.maxHp -= 2; if (playerData.maxHp < 1) playerData.maxHp = 1; }
-  } else if (t.id === 'm_a5' || t.id === 'm_h1' || t.id === 'm_h3') {
+  } else if (t.id === 'm_a5' || t.id === 'm_h3') {
     playerData.maxHp = config.baseHp; playerData.maxAmmo = config.maxAmmo; playerData.maxShield = config.maxShield;
     if (gameState && gameState.round >= 120) { playerData.maxShield -= 2; if (playerData.maxShield < 0) playerData.maxShield = 0; playerData.maxHp -= 2; if (playerData.maxHp < 1) playerData.maxHp = 1; }
   }
+  // m_h1 stats are permanent base changes, no need to revert on remove unless losing the talent
   if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
   if (playerData.ammo > playerData.maxAmmo) playerData.ammo = playerData.maxAmmo;
   if (playerData.shield > playerData.maxShield) playerData.shield = playerData.maxShield;
@@ -583,9 +616,20 @@ function applyTalentMods(playerData, t) {
   else if (t.id === 'n_d2') { playerData.shield += 3; playerData.maxHp -= 3; playerData.hp -= 3; } 
   else if (t.id === 'm_d3') { playerData.maxHp -= 2; playerData.hp -= 2; playerData.maxShield = 2; if (playerData.shield > 2) playerData.shield = 2; }
   else if (t.id === 'm_a5') { playerData.reviveCharges = 1; }
+  else if (t.id === 'm_a6') {
+    playerData.maxHp = Math.max(1, playerData.maxHp - 2); 
+    playerData.hp = Math.min(playerData.hp, playerData.maxHp);
+  }
   else if (t.id === 'm_h1') {
-    playerData.maxHp = Math.floor(playerData.maxHp / 2); if (playerData.maxHp < 1) playerData.maxHp = 1;
-    if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
+    playerData.maxHp = Math.max(1, playerData.maxHp - 2);
+    playerData.hp = Math.min(playerData.hp, playerData.maxHp);
+    playerData.maxShield = Math.max(0, playerData.maxShield - 2);
+    playerData.shield = Math.min(playerData.shield, playerData.maxShield);
+    playerData.maxAmmo = Math.max(0, playerData.maxAmmo - 2);
+    playerData.ammo = Math.min(playerData.ammo, playerData.maxAmmo);
+    playerData.pocketUses = gameState ? gameState.config.capacity : 2;
+    playerData.pocketInventory = [];
+    playerData.h1SurviveTimer = 0;
     playerData.extraTalent = null;
   }
   else if (t.id === 'm_h2') { playerData.sealCharges = 1; playerData.sealDmgTimer = 0; }
@@ -683,23 +727,60 @@ function showTalentDetail(t) {
   document.getElementById('td-desc').innerText = t.desc; document.getElementById('talent-detail-modal').style.display = 'flex';
 }
 
-function handleLootChoice(accept) {
-  const pData = gameState[myRole];
-  if (!pData || !pData.pendingLoot) return;
+function openPocket() {
+    let myP = gameState[myRole];
+    if (!myP || !myP.pocketInventory || myP.pocketInventory.length === 0) return alert("口袋目前空空如也！");
+    let listStr = "";
+    myP.pocketInventory.forEach((item, index) => {
+        if (item.pocketCd > 0) {
+            listStr += `<button class="setup-btn disabled" style="width:100%; margin-bottom:10px; padding:12px; font-size:0.9em; cursor:not-allowed;">${item.talent.name} (口袋冷却中: ${item.pocketCd} 回合)</button>`;
+        } else {
+            listStr += `<button class="setup-btn host-btn" style="width:100%; margin-bottom:10px; padding:12px; font-size:0.9em;" onclick="selectPocketItem(${index})">提取：${item.talent.name}</button>`;
+        }
+    });
+    document.getElementById('pocket-list').innerHTML = listStr;
+    document.getElementById('pocket-modal').style.display = 'flex';
+}
 
-  if (accept) {
-    let newT = pData.pendingLoot.talent;
-    newT.talentCd = (newT.talentCd || 0) + pData.pendingLoot.cdPenalty;
-    if (pData.talent && pData.talent.id === 'm_h1') {
-      if (pData.extraTalent) removeTalentMods(pData, pData.extraTalent, gameState.config);
-      pData.extraTalent = newT; applyTalentMods(pData, newT);
+function selectPocketItem(index) {
+    selectedPocketIndex = index;
+    document.getElementById('pocket-modal').style.display = 'none';
+    document.getElementById('conservation-modal').style.display = 'flex';
+}
+
+function confirmConservation() {
+    let decStat = document.querySelector('input[name="cons-dec"]:checked');
+    let incStat = document.querySelector('input[name="cons-inc"]:checked');
+    if (!decStat || !incStat) return alert("请完成等价交换的选择！");
+    if (decStat.value === incStat.value) return alert("不能选择同一属性进行加减！");
+
+    let myP = gameState[myRole];
+    if (decStat.value === 'hp' && myP.maxHp <= 1) return alert("生命上限不能低于1！");
+    if (decStat.value === 'shield' && myP.maxShield <= 0) return alert("护盾上限已为0，无法降低！");
+    if (decStat.value === 'ammo' && myP.maxAmmo <= 0) return alert("弹药上限已为0，无法降低！");
+
+    if (decStat.value === 'hp') { myP.maxHp--; myP.hp = Math.min(myP.hp, myP.maxHp); }
+    if (decStat.value === 'shield') { myP.maxShield--; myP.shield = Math.min(myP.shield, myP.maxShield); }
+    if (decStat.value === 'ammo') { myP.maxAmmo--; myP.ammo = Math.min(myP.ammo, myP.maxAmmo); }
+
+    if (incStat.value === 'hp') { myP.maxHp++; myP.hp++; } 
+    if (incStat.value === 'shield') { myP.maxShield++; }
+    if (incStat.value === 'ammo') { myP.maxAmmo++; }
+
+    let item = myP.pocketInventory[selectedPocketIndex];
+    myP.extraTalent = item.talent;
+
+    if (item.talent.category === '机制') {
+        let cdKey = getTalentCdKey(item.talent.id);
+        if (cdKey) myP[cdKey] = 3; 
     } else {
-      removeTalentMods(pData, pData.talent, gameState.config);
-      pData.talent = newT; applyTalentMods(pData, newT);
+        myP.extraTalentTimer = 8;
+        applyTalentMods(myP, item.talent); 
     }
-  }
-  pData.pendingLoot = null;
-  if (isPvE) { render(gameState); } else { roomRef.child(myRole).set(pData); }
+
+    myP.pocketUses--;
+    document.getElementById('conservation-modal').style.display = 'none';
+    if (isPvE) { render(gameState); } else { roomRef.child(myRole).set(myP); }
 }
 
 // ==================== 安全校验与动作处理 ====================
@@ -721,7 +802,6 @@ function checkRoundStart() {
 
   let allMoved = true;
   for (let i = 0; i < aliveKeys.length; i++) {
-    if (gameState[aliveKeys[i]].pendingLoot) { allMoved = false; break; }
     if (gameState[aliveKeys[i]].move === "") { allMoved = false; break; }
   }
 
@@ -732,7 +812,7 @@ function checkRoundStart() {
         const currentData = snap.val();
         if (currentData) {
           let stillAllMoved = true;
-          for (let i = 0; i < aliveKeys.length; i++) { if (currentData[aliveKeys[i]].move === "" || currentData[aliveKeys[i]].pendingLoot) { stillAllMoved = false; break; } }
+          for (let i = 0; i < aliveKeys.length; i++) { if (currentData[aliveKeys[i]].move === "") { stillAllMoved = false; break; } }
           if (stillAllMoved) { gameState = currentData; processRound(); }
         }
         isProcessing = false; 
@@ -748,6 +828,13 @@ function handleInput(move, val = 0) {
   if (gameState.round === 80 && !myData.rerolled) return;
 
   if (myData.silenced > 0 && move !== 'skip') return alert("你已被【蚀骨封行】禁锢，只能结束回合！");
+
+  if (myData.stealthTimer > 0) {
+      if (move === 'reload' || move === 'shoot' || move === 'fatal_shoot') return alert("隐匿状态下无法进行开火或装弹指令！");
+      if (move === 'shield' || move === 'duck') {
+          if (myData.stealthDefUsed) return alert("隐匿期间，防卫性技能仅能使用 1 次！");
+      }
+  }
 
   if (hasTalent(myData, 'm_a1') && move === 'shoot' && val > 2) return alert("【圣盾坚壁】单次射击最高 2 发");
   if (hasTalent(myData, 'm_d1') && move === 'shield') return alert("【深渊魔弹】无法使用防御");
@@ -768,6 +855,10 @@ function handleInput(move, val = 0) {
   if (move === 'holy_light') {
     if (!hasTalent(myData, 'm_a2')) return alert("非法操作！");
     if (myData.holyCd > 0) return alert("【圣光】冷却中，还需 " + myData.holyCd + " 回合！");
+  }
+  if (move === 'stealth_action') {
+    if (!hasTalent(myData, 'm_a6')) return alert("非法操作！");
+    if (myData.stealthCd > 0) return alert("【缄默】冷却中，还需 " + myData.stealthCd + " 回合！");
   }
   if (move === 'dual_heal') {
     if (!hasTalent(myData, 'm_a4')) return alert("非法操作！");
@@ -790,13 +881,15 @@ function handleInput(move, val = 0) {
 
   let target = "";
   if (move === 'shoot' || move === 'ground_spike' || move === 'holy_light' || move === 'fatal_shoot' || move === 'heretic_seal' || move === 'symbiosis') {
-    if (gameState.config.capacity === 2) { target = myRole === 'p1' ? 'p2' : 'p1'; } 
-    else {
+    if (gameState.config.capacity === 2) { 
+        target = myRole === 'p1' ? 'p2' : 'p1'; 
+    } else {
       const tRadio = document.querySelector('input[name="atk-target"]:checked');
       if (!tRadio) return alert("请先锁定目标🎯！");
       target = tRadio.value;
-      if (gameState[target] && gameState[target].hp <= 0) return alert("目标已阵亡！");
     }
+    if (gameState[target] && gameState[target].hp <= 0) return alert("目标已阵亡！");
+    if (gameState[target] && gameState[target].stealthTimer > 0) return alert("目标处于隐匿状态，无法被锁定！");
   }
 
   if (isPvE) {
@@ -810,16 +903,16 @@ function handleInput(move, val = 0) {
     for(let i=2; i<=cap; i++) {
         let aiKey = 'p'+i;
         if(aliveKeys.includes(aiKey)) {
-            let enemies = aliveKeys.filter(k => k !== aiKey);
-            // 简单敌意评估，随机挑选一个存活玩家
-            let aiTarget = enemies[Math.floor(Math.random() * enemies.length)] || 'p1';
+            // Filter out stealthed enemies
+            let enemies = aliveKeys.filter(k => k !== aiKey && !(gameState[k].stealthTimer > 0));
+            // Default target fallback
+            let aiTarget = enemies.length > 0 ? enemies[Math.floor(Math.random() * enemies.length)] : null;
             const aiDecision = getSmartAiMove(aiKey, enemies);
             gameState[aiKey].move = aiDecision.move;
             gameState[aiKey].val = aiDecision.val;
 
-            // 只有定向技能需要锁定 target
             if (['shoot', 'fatal_shoot', 'ground_spike', 'holy_light', 'heretic_seal', 'symbiosis'].includes(aiDecision.move)) {
-                gameState[aiKey].target = aiTarget;
+                gameState[aiKey].target = aiTarget || ""; // If null, action will likely miss
             } else {
                 gameState[aiKey].target = "";
             }
@@ -834,12 +927,23 @@ function handleInput(move, val = 0) {
 // 核心更新：AI 行为树兼容多敌方数组，并学习释放共生，优化狂击使用上限
 function getSmartAiMove(aiKey, enemiesArray) {
   const ai = gameState[aiKey]; 
-  // 为防御与针对性评估选择一个主要假想敌（优先真实玩家 P1）
-  let oppKey = enemiesArray.includes('p1') ? 'p1' : enemiesArray[0];
-  const human = gameState[oppKey]; 
+  let oppKey = enemiesArray.includes('p1') ? 'p1' : (enemiesArray[0] || null);
+  const human = oppKey ? gameState[oppKey] : null; 
   let allowedMoves = [];
 
   if (ai.silenced > 0) return { move: 'skip', val: 0 };
+
+  // Stealth AI logic
+  if (ai.stealthTimer > 0) {
+      if (!ai.stealthDefUsed) {
+          if (!hasTalent(ai, 'm_h3') || ai.h3State !== '勿听') allowedMoves.push('duck');
+          if (!hasTalent(ai, 'm_d1') && (!hasTalent(ai, 'm_h3') || ai.h3State !== '勿听')) allowedMoves.push('shield');
+      }
+      allowedMoves.push('ground_spike', 'rock');
+      if (hasTalent(ai, 'm_a2') && ai.holyCd === 0 && human) allowedMoves.push('holy_light');
+      if (allowedMoves.length === 0) return { move: 'rock', val: 0 }; 
+      return { move: allowedMoves[Math.floor(Math.random() * allowedMoves.length)], val: 0 };
+  }
 
   let baseMoves = ['reload', 'shield', 'duck', 'ground_spike', 'rock'];
   for (let i = 0; i < baseMoves.length; i++) {
@@ -849,7 +953,10 @@ function getSmartAiMove(aiKey, enemiesArray) {
     if (pushIt) allowedMoves.push(m);
   }
 
-  if (hasTalent(ai, 'm_a2') && ai.holyCd === 0) allowedMoves.push('holy_light', 'holy_light');
+  if (hasTalent(ai, 'm_a6') && ai.stealthCd === 0) {
+      if (ai.hp <= 3 || Math.random() < 0.4) allowedMoves.push('stealth_action', 'stealth_action');
+  }
+  if (hasTalent(ai, 'm_a2') && ai.holyCd === 0 && human) allowedMoves.push('holy_light', 'holy_light');
   if (hasTalent(ai, 'm_a4') && ai.dualCd === 0 && ai.hp < ai.maxHp) {
     if (ai.hp <= 3 && Math.random() < 0.7) return { move: 'dual_heal', val: 0 };
     allowedMoves.push('dual_heal');
@@ -867,7 +974,8 @@ function getSmartAiMove(aiKey, enemiesArray) {
       allowedMoves.push('heal'); 
     }
   }
-  let canShoot = true; if (ai.ammo <= 0) canShoot = false;
+
+  let canShoot = true; if (ai.ammo <= 0 || !human) canShoot = false;
   if (hasTalent(ai, 'n_d1') && gameState.round === 1) canShoot = false;
   if (hasTalent(ai, 'm_h3') && ai.h3State === '勿视') canShoot = false;
 
@@ -907,10 +1015,9 @@ function getSmartAiMove(aiKey, enemiesArray) {
 // 核心更新：全局引入 roundDmg 变量以支撑共生机制
 function processRound() {
   let data = gameState; let logs = [];
-  const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', symbiosis:'共生', skip:'禁锢(跳过)' };
+  const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', symbiosis:'共生', stealth_action:'缄默', skip:'禁锢(跳过)' };
   const cap = data.config.capacity; const allKeys = ['p1', 'p2', 'p3', 'p4'];
 
-  // 每回合清洗一次局内受损累计
   for (let i = 0; i < allKeys.length; i++) { 
      if(data[allKeys[i]]) data[allKeys[i]].roundDmg = 0; 
   }
@@ -930,13 +1037,16 @@ function processRound() {
   }
   const actionHeader = `【${actionStrs.join(' | ')}】`;
 
-  // 1. 预处理：记录圣光霸体状态
+  // 1. 预处理：记录圣光霸体与缄默防卫限制
   let isInvincible = {};
   for(let i=0; i<alive.length; i++) {
       let p = alive[i]; let player = data[p];
       if (player.move === 'holy_light' && hasTalent(player, 'm_a2')) {
           isInvincible[p] = true;
           logs.push(`<span class="log-safe">👼 ${player.username || p.toUpperCase()} 沐浴在圣光之中，本回合进入霸体状态！</span>`);
+      }
+      if (player.stealthTimer > 0 && (player.move === 'shield' || player.move === 'duck')) {
+          player.stealthDefUsed = true;
       }
   }
 
@@ -985,12 +1095,12 @@ function processRound() {
       if (Math.random() < 0.5) {
         player.hp = Math.min(player.hp + 1, player.maxHp); logs.push(`<span class="log-safe">✨ ${p.toUpperCase()} 渡灵法阵眷顾，恢复自身 1 点生命！</span>`);
       } else {
-        let enemies = []; for (let k = 0; k < alive.length; k++) { if (alive[k] !== p) enemies.push(alive[k]); }
+        let enemies = []; for (let k = 0; k < alive.length; k++) { if (alive[k] !== p && data[alive[k]].stealthTimer <= 0) enemies.push(alive[k]); }
         if (enemies.length > 0) {
           let randEnemyKey = enemies[Math.floor(Math.random() * enemies.length)];
           data[randEnemyKey].hp = Math.min(data[randEnemyKey].hp + 1, data[randEnemyKey].maxHp);
           logs.push(`<span class="log-dmg">💀 ${p.toUpperCase()} 渡灵反转！为敌人 ${randEnemyKey.replace('p','').toUpperCase()} 恢复了 1 点生命！</span>`);
-        } else logs.push(`<span style="color:#8b949e;">✨ ${p.toUpperCase()} 渡灵落空...</span>`);
+        } else logs.push(`<span style="color:#8b949e;">✨ ${p.toUpperCase()} 渡灵找不到目标，法阵消散...</span>`);
       }
     }
     if (player.move === 'heretic_seal') {
@@ -1010,10 +1120,16 @@ function processRound() {
            logs.push(`<span class="log-dmg">🔮 ${p.toUpperCase()} 释放了【共生】，强行将宿命与 ${data[target].username || target.toUpperCase()} 捆绑于一线！</span>`);
        }
     }
+    if (player.move === 'stealth_action') {
+       player.stealthCd = 10;
+       player.stealthTimer = 5;
+       player.stealthDefUsed = false;
+       logs.push(`<span class="log-safe">👼 ${p.toUpperCase()} 释放了【缄默】，遁入无声的隐匿深渊！</span>`);
+    }
     if (player.move !== 'shoot' && player.move !== 'fatal_shoot' && player.ammo > player.maxAmmo) player.ammo = player.maxAmmo;
   }
 
-  // 4. 攻击判定与 LastAttacker 记录
+  // 4. 攻击判定与 LastAttacker 记录 (全面嵌入 roundDmg 收集与免伤机制)
   for (let i = 0; i < alive.length; i++) {
     const attKey = alive[i]; let att = data[attKey];
     if (!att || (att.move !== 'shoot' && att.move !== 'ground_spike' && att.move !== 'holy_light' && att.move !== 'fatal_shoot')) continue;
@@ -1029,14 +1145,22 @@ function processRound() {
       continue; 
     }
 
+    // [计算攻击方伤害衰减] 苟且偷生形态A，伤害-1
+    let attDmgMod = (hasTalent(att, 'm_h1') && !att.extraTalent) ? -1 : 0;
+
     if (att.move === 'holy_light') {
       att.holyCd = 6; 
       if (isInvincible[defKey]) {
           logs.push(`<span class="log-safe">🛡️ ${defN} 处于圣光霸体，免疫了 ${attN} 的抽取！</span>`);
       } else {
-          def.hp -= 1; def.roundDmg += 1; def.tookDamage = true; def.lastAttacker = attKey; 
+          let hlDmg = Math.max(0, 1 + attDmgMod);
+          if (def.silenced > 0) hlDmg = Math.floor(hlDmg / 2);
+          if (def.silenced > 0 && def.hp - hlDmg <= 0) { hlDmg = Math.max(0, def.hp - 1); logs.push(`🔮 【封行】庇护！${defN} 免疫致命一击苟活！`); }
+
+          def.hp -= hlDmg; def.roundDmg += hlDmg; def.tookDamage = true; def.lastAttacker = attKey; 
           att.hp = Math.min(att.hp + 1, att.maxHp);
-          logs.push(`<span class="log-safe">✨ ${attN} 圣光降临，抽取 ${defN} 1点生命！</span>`);
+          if(hlDmg > 0) logs.push(`<span class="log-safe">✨ ${attN} 圣光降临，抽取 ${defN} ${hlDmg}点生命！</span>`);
+          else logs.push(`<span style="color:#8b949e;">✨ ${attN} 圣光被大幅衰减，未能造成伤害...</span>`);
       }
     }
 
@@ -1060,16 +1184,38 @@ function processRound() {
       } else { att.ammo -= att.val; }
 
       if (shouldProceedShoot) {
+        dmgToApply = Math.max(0, dmgToApply + attDmgMod); // 应用攻击方衰减
+
         if (isInvincible[defKey]) {
             logs.push(`<span class="log-safe">🛡️ ${defN} 处于圣光霸体，无视了 ${attN} 的射击！</span>`);
         }
         else if (def.move === 'duck' || def.move === 'ground_spike') logs.push(`<span class="log-safe">${defN} 避开了 ${attN} 的射击</span>`);
+        else if (!isPiercing && hasTalent(def, 'm_h1') && !def.extraTalent && def.shield > 0 && def.move !== 'shield') {
+            // 苟且偷生: 自动举盾
+            if (def.silenced > 0) { dmgToApply = Math.floor(dmgToApply / 2); }
+            if (dmgToApply > def.shield) {
+                let dmg = dmgToApply - def.shield;
+                if (def.silenced > 0 && def.hp - dmg <= 0) { dmg = Math.max(0, def.hp - 1); logs.push(`🔮 【封行】庇护！${defN} 免疫致命一击苟活！`); }
+                def.hp -= dmg; def.roundDmg += dmg; def.shield = 0;
+                logs.push(`👺 ${defN} 的【苟且】触发自动举盾，挡下部分伤害，承受 ${dmg} 伤`);
+                actualDmg = dmgToApply;
+            } else {
+                def.shield -= dmgToApply; actualDmg = dmgToApply;
+                logs.push(`👺 ${defN} 的【苟且】触发自动举盾，完全吸收了伤害`);
+            }
+            def.tookDamage = true; def.lastAttacker = attKey;
+        }
         else if (def.move === 'shield' && !isPiercing) {
+          if (def.silenced > 0) { dmgToApply = Math.floor(dmgToApply / 2); }
           if (dmgToApply > def.shield) {
-            let dmg = dmgToApply - def.shield; def.hp -= dmg; def.roundDmg += dmg; def.shield = 0; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmg;
+            let dmg = dmgToApply - def.shield; 
+            if (def.silenced > 0 && def.hp - dmg <= 0) { dmg = Math.max(0, def.hp - 1); logs.push(`🔮 【封行】庇护！${defN} 免疫致命一击苟活！`); }
+            def.hp -= dmg; def.roundDmg += dmg; def.shield = 0; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmg;
             logs.push(`<span class="log-dmg">${attN} 击穿 ${defN} 护盾造成 ${dmg} 伤</span>`);
           } else { def.shield -= dmgToApply; logs.push(`<span class="log-safe">${defN} 的护盾吸收了 ${attN} 的伤害</span>`); }
         } else {
+          if (def.silenced > 0) { dmgToApply = Math.floor(dmgToApply / 2); }
+          if (def.silenced > 0 && def.hp - dmgToApply <= 0) { dmgToApply = Math.max(0, def.hp - 1); logs.push(`🔮 【封行】庇护！${defN} 免疫致命一击苟活！`); }
           def.hp -= dmgToApply; def.roundDmg += dmgToApply; def.tookDamage = true; def.lastAttacker = attKey; actualDmg = dmgToApply;
           let hitType = isPiercing ? '无视护盾' : '直接'; logs.push(`<span class="log-dmg">${attN} ${hitType}对 ${defN} 造成 ${dmgToApply} 伤</span>`);
         }
@@ -1077,9 +1223,14 @@ function processRound() {
     }
 
     if (att.move === 'ground_spike') {
+      let gsDmg = Math.max(0, 2 + attDmgMod);
+      let reboundDmg = Math.max(0, 1 + attDmgMod);
+
       if (def.move === 'rock') { 
           if (!isInvincible[attKey]) {
-              att.hp -= 1; att.roundDmg += 1; att.tookDamage = true; att.lastAttacker = defKey; logs.push(`<span class="log-dmg">${defN} 反弹地刺，${attN} 受到 1 伤</span>`); 
+              if (att.silenced > 0) { reboundDmg = Math.floor(reboundDmg / 2); }
+              if (att.silenced > 0 && att.hp - reboundDmg <= 0) { reboundDmg = Math.max(0, att.hp - 1); logs.push(`🔮 【封行】庇护！${attN} 免疫致命一击苟活！`); }
+              att.hp -= reboundDmg; att.roundDmg += reboundDmg; att.tookDamage = true; att.lastAttacker = defKey; logs.push(`<span class="log-dmg">${defN} 反弹地刺，${attN} 受到 ${reboundDmg} 伤</span>`); 
           } else {
               logs.push(`<span class="log-safe">${defN} 反弹地刺，但 ${attN} 的圣光霸体免疫了反弹伤害！</span>`);
           }
@@ -1088,7 +1239,9 @@ function processRound() {
           if (isInvincible[defKey]) {
               logs.push(`<span class="log-safe">🛡️ ${defN} 处于圣光霸体，无视了地刺攻击！</span>`);
           } else {
-              def.hp -= 2; def.roundDmg += 2; def.tookDamage = true; def.lastAttacker = attKey; logs.push(`<span class="log-dmg">${attN} 的地刺贯穿了 ${defN}，造成 2 伤</span>`); 
+              if (def.silenced > 0) { gsDmg = Math.floor(gsDmg / 2); }
+              if (def.silenced > 0 && def.hp - gsDmg <= 0) { gsDmg = Math.max(0, def.hp - 1); logs.push(`🔮 【封行】庇护！${defN} 免疫致命一击苟活！`); }
+              def.hp -= gsDmg; def.roundDmg += gsDmg; def.tookDamage = true; def.lastAttacker = attKey; logs.push(`<span class="log-dmg">${attN} 的地刺贯穿了 ${defN}，造成 ${gsDmg} 伤</span>`); 
           }
       }
     }
@@ -1111,36 +1264,55 @@ function processRound() {
                if (isInvincible[t]) {
                    logs.push(`<span class="log-safe">🛡️ 圣光庇护着 ${targetPlayer.username || t.toUpperCase()}，免疫了共生的诅咒传递！</span>`);
                } else {
+                   if (targetPlayer.silenced > 0) { sharedDmg = Math.floor(sharedDmg / 2); }
+                   if (targetPlayer.silenced > 0 && targetPlayer.hp - sharedDmg <= 0) { sharedDmg = Math.max(0, targetPlayer.hp - 1); logs.push(`🔮 【封行】庇护！${targetPlayer.username || t.toUpperCase()} 免疫了共生的致命一击苟活！`); }
+
                    targetPlayer.hp -= sharedDmg;
                    targetPlayer.roundDmg += sharedDmg;
-                   logs.push(`<span class="log-dmg">🩸 【共生】触动！${player.username || p.toUpperCase()} 受到的 ${sharedDmg} 点伤害同步绞杀了 ${targetPlayer.username || t.toUpperCase()}！</span>`);
+                   if (sharedDmg > 0) logs.push(`<span class="log-dmg">🩸 【共生】触动！${player.username || p.toUpperCase()} 受到的 ${sharedDmg} 点伤害同步绞杀了 ${targetPlayer.username || t.toUpperCase()}！</span>`);
                }
            }
            // 反噬代价
            if (targetPlayer.hp <= 0 && player.hp > 0) {
-               player.hp = 0;
-               logs.push(`<span class="log-dmg">💀 【共生】反噬！因宿主 ${targetPlayer.username || t.toUpperCase()} 死亡，${player.username || p.toUpperCase()} 被强行扯入深渊一同殉葬！</span>`);
+               if (isInvincible[p]) {
+                   logs.push(`<span class="log-safe">🛡️ 宿主 ${targetPlayer.username || t.toUpperCase()} 死亡，但 ${player.username || p.toUpperCase()} 的圣光霸体免疫了殉葬反噬！</span>`);
+               } else {
+                   player.hp = 0;
+                   logs.push(`<span class="log-dmg">💀 【共生】反噬！因宿主 ${targetPlayer.username || t.toUpperCase()} 死亡，${player.username || p.toUpperCase()} 被强行扯入深渊一同殉葬！</span>`);
+               }
            }
         }
      }
   }
 
-  // 6. 蚀骨封行回合末核算(延迟反噬与充能恢复)
+  // 6. 蚀骨封行回合末核算(延迟反噬与充能恢复) & 苟且回盾
   for (let i = 0; i < allKeys.length; i++) {
       let pData = data[allKeys[i]];
-      if (pData && pData.hp > 0 && hasTalent(pData, 'm_h2')) {
-          if (pData.sealDmgTimer > 0) {
-              pData.sealDmgTimer -= 1;
-              if (pData.sealDmgTimer === 0) {
-                  pData.hp -= 1;
-                  pData.roundDmg += 1;
-                  logs.push(`<span class="log-dmg">🩸 【蚀骨封行】反噬期至！${pData.username || allKeys[i].toUpperCase()} 吐出一口黑血，流失 1 点生命！</span>`);
+      if (pData && pData.hp > 0) {
+          if (hasTalent(pData, 'm_h2')) {
+              if (pData.sealDmgTimer > 0) {
+                  if (pData.stealthTimer > 0) {
+                      // 隐匿期间，封行延迟伤害不生效也不递减
+                  } else {
+                      pData.sealDmgTimer -= 1;
+                      if (pData.sealDmgTimer === 0) {
+                          pData.hp -= 1; pData.roundDmg += 1;
+                          logs.push(`<span class="log-dmg">🩸 【蚀骨封行】反噬期至！${pData.username || allKeys[i].toUpperCase()} 吐出一口黑血，流失 1 点生命！</span>`);
+                      }
+                  }
+              }
+              if (data.round % 5 === 0) {
+                  if (pData.sealCharges < 2) {
+                      pData.sealCharges += 1;
+                      logs.push(`<span class="log-safe">🔮 邪力汇聚：${pData.username || allKeys[i].toUpperCase()} 恢复了 1 次【蚀骨封行】使用机会！</span>`);
+                  }
               }
           }
-          if (data.round % 5 === 0) {
-              if (pData.sealCharges < 2) {
-                  pData.sealCharges += 1;
-                  logs.push(`<span class="log-safe">🔮 邪力汇聚：${pData.username || allKeys[i].toUpperCase()} 恢复了 1 次【蚀骨封行】使用机会！</span>`);
+          if (hasTalent(pData, 'm_h1') && !pData.extraTalent) {
+              pData.h1SurviveTimer = (pData.h1SurviveTimer || 0) + 1;
+              if (pData.h1SurviveTimer % 3 === 0 && pData.shield < pData.maxShield) {
+                  pData.shield += 1;
+                  logs.push(`<span class="log-safe">👺 ${pData.username || allKeys[i].toUpperCase()} 处于【苟且】状态，悄悄恢复了 1 点护盾。</span>`);
               }
           }
       }
@@ -1156,7 +1328,29 @@ function processRound() {
     delete player.tookDamage; 
   }
 
-  // 7. 苟且偷生与归光还魂(m_a5) 死生结算核查
+  // 7. 机缘退回口袋核算 (苟且偷生)
+  for (let i = 0; i < allKeys.length; i++) {
+      let pData = data[allKeys[i]];
+      if (pData && pData.extraTalent) {
+          if (pData.extraTalent.category === '机制') {
+              if (isMoveFromTalent(pData.move, pData.extraTalent.id)) {
+                  let pt = pData.pocketInventory.find(t => t.talent.id === pData.extraTalent.id);
+                  if (pt) pt.pocketCd = getBaseCd(pData.extraTalent.id);
+                  pData.extraTalent = null;
+                  logs.push(`<span style="color:#d29922;">👺 ${pData.username || allKeys[i].toUpperCase()} 的【偷生】机制机缘耗尽，退回口袋冷却！</span>`);
+              }
+          } else if (pData.extraTalent.category === '数值') {
+              pData.extraTalentTimer -= 1;
+              if (pData.extraTalentTimer <= 0) {
+                  removeTalentMods(pData, pData.extraTalent, data.config);
+                  pData.extraTalent = null;
+                  logs.push(`<span style="color:#d29922;">👺 ${pData.username || allKeys[i].toUpperCase()} 的【偷生】数值机缘时效已过，退回口袋！</span>`);
+              }
+          }
+      }
+  }
+
+  // 8. 苟且偷生搜刮与归光还魂(m_a5) 死生结算核查
   for (let i = 0; i < allKeys.length; i++) {
     const k = allKeys[i];
     if (data[k] && data[k].joined && data[k].hp <= 0 && !data[k].lootedMark) {
@@ -1178,13 +1372,13 @@ function processRound() {
       } 
       if (data[k].hp <= 0) {
         data[k].lootedMark = true; 
-        for (let j = 0; j < alive.length; j++) {
-          let hk = alive[j]; let predator = data[hk];
-          if (hasTalent(predator, 'm_h1') && (data[k].talent && data[k].talent.category !== '数值')) {
-            let isKiller = (data[k].lastAttacker === hk);
-            predator.pendingLoot = { talent: data[k].talent, cdPenalty: isKiller ? 0 : 1, fromName: data[k].username || k };
-            logs.push(`<span style='color:var(--red)'>👺 ${predator.username || hk.toUpperCase()} 的【苟且偷生】盯上了死者遗留的机缘...</span>`);
-          }
+        // 自动收入口袋
+        let h1Owner = null;
+        for (let pk in data) { if (data[pk] && data[pk].joined && hasTalent(data[pk], 'm_h1')) { h1Owner = data[pk]; break; } }
+        if (h1Owner && data[k].talent) {
+            h1Owner.pocketInventory = h1Owner.pocketInventory || [];
+            h1Owner.pocketInventory.push({ talent: data[k].talent, pocketCd: 0 });
+            logs.push(`<span style='color:var(--red)'>👺 【苟且偷生】暗中运作，死者遗留的机缘被无声地收入了万能口袋...</span>`);
         }
       }
     }
@@ -1197,15 +1391,36 @@ function processRound() {
     const p = allKeys[i];
     if (data[p]) { 
       data[p].move = ""; data[p].target = ""; 
-      if (data[p].healCd > 0) data[p].healCd -= 1;
-      if (data[p].talentCd > 0) data[p].talentCd -= 1;
-      if (data[p].holyCd > 0) data[p].holyCd -= 1;
-      if (data[p].dualCd > 0) data[p].dualCd -= 1;
-      if (data[p].fatalCd > 0) data[p].fatalCd -= 1;
-      if (data[p].symCd > 0) data[p].symCd -= 1;
+      if (data[p].stealthTimer > 0) {
+          data[p].stealthTimer -= 1;
+          if (data[p].stealthTimer === 0) data[p].stealthDefUsed = false;
+      } else {
+          if (data[p].healCd > 0) data[p].healCd -= 1;
+          if (data[p].talentCd > 0) data[p].talentCd -= 1;
+          if (data[p].holyCd > 0) data[p].holyCd -= 1;
+          if (data[p].dualCd > 0) data[p].dualCd -= 1;
+          if (data[p].fatalCd > 0) data[p].fatalCd -= 1;
+          if (data[p].symCd > 0) data[p].symCd -= 1;
+          if (data[p].stealthCd > 0) data[p].stealthCd -= 1;
+      }
       if (data[p].silenced > 0) data[p].silenced -= 1;
+      if (data[p].pocketInventory) {
+          data[p].pocketInventory.forEach(pt => { if (pt.pocketCd > 0) pt.pocketCd -= 1; });
+      }
     } 
   }
+
+  // 缄默自动触发核算(放于回合末，供下回合使用)
+  for (let i = 0; i < allKeys.length; i++) {
+      let pData = data[allKeys[i]];
+      if (pData && pData.hp > 0 && pData.hp < 3 && hasTalent(pData, 'm_a6') && !pData.autoStealthUsed) {
+          pData.autoStealthUsed = true;
+          pData.stealthTimer = 5;
+          pData.stealthDefUsed = false;
+          data.log += `<div style="color:var(--cyan); font-weight:bold; margin-top:10px;">👼 濒死警报：[${pData.username || allKeys[i].toUpperCase()}] 生命值危急，自动遁入【缄默】无声状态！</div>`;
+      }
+  }
+
   data.round += 1;
 
   if (data.round === 80) {
@@ -1308,9 +1523,17 @@ function resetRoomForRematch(oldData) {
       newData[p].h3State = '勿视';
       newData[p].h3Timer = 0;
       newData[p].symCd = 0;
+      newData[p].stealthCd = 0;
+      newData[p].stealthTimer = 0;
+      newData[p].stealthDefUsed = false;
+      newData[p].autoStealthUsed = false;
       newData[p].sealCharges = 1;
       newData[p].sealDmgTimer = 0;
       newData[p].roundDmg = 0;
+      newData[p].pocketInventory = [];
+      newData[p].pocketUses = 0;
+      newData[p].h1SurviveTimer = 0;
+      newData[p].extraTalentTimer = 0;
       newData[p].rerolled = false;
       newData[p].move = "";
       newData[p].target = "";
@@ -1409,7 +1632,10 @@ function buildTalentHtml(tObj, pData) {
   else if (tObj.id === 'm_h2' && pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
   else if (tObj.id === 'm_h4' && pData.symCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.symCd})</span>`;
   else if (tObj.id === 'm_a5' && pData.talentCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.talentCd})</span>`;
-  let tState = ""; if (tObj.id === 'm_h3') tState = ` [${pData.h3State}]`;
+  else if (tObj.id === 'm_a6' && pData.stealthCd > 0) cdText = ` <span style="color:#f85149; font-size:0.85em;">(CD:${pData.stealthCd})</span>`;
+  let tState = ""; 
+  if (tObj.id === 'm_h3') tState = ` [${pData.h3State}]`;
+  if (tObj.id === 'm_a6' && pData.stealthTimer > 0) tState = ` [隐匿: ${pData.stealthTimer}回合]`;
   return `◈ ${tObj.name}${tState}${cdText}`;
 }
 
@@ -1475,7 +1701,7 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
   } else {
     if (cardEl) { cardEl.style.opacity = '1'; cardEl.style.filter = 'none'; }
     if (tsRadio) {
-      if (pKey === myRole || myRole === 'spectator') tsRadio.style.display = 'none';
+      if (pKey === myRole || myRole === 'spectator' || pData.stealthTimer > 0) tsRadio.style.display = 'none';
       else { tsRadio.style.display = 'inline-block'; let spanT = document.getElementById(`label-t-${pKey}`); if(spanT && pData.username) spanT.innerText = pData.username; }
     }
   }
@@ -1570,10 +1796,16 @@ function updateActionPanel(data) {
       if (actionWaiting) actionWaiting.style.display = 'none';
 
       const myAmmo = myP.ammo; const maxA = myP.maxAmmo;
+      const reloadBtn = document.getElementById('btn-reload');
+      if (reloadBtn) {
+         if (myP.stealthTimer > 0) reloadBtn.classList.add('disabled');
+         else reloadBtn.classList.remove('disabled');
+      }
 
       for (let i = 1; i <= maxA; i++) {
         const btn = document.getElementById(`btn-s${i}`); if (!btn) continue;
         let disabled = false;
+        if (myP.stealthTimer > 0) disabled = true;
         if (i > myAmmo) disabled = true;
         if (hasTalent(myP, 'm_a1') && i > 2) disabled = true;
         if (hasTalent(myP, 'n_d1') && data.round === 1) disabled = true;
@@ -1585,6 +1817,7 @@ function updateActionPanel(data) {
       if (fatalRow) {
         if (hasTalent(myP, 'm_d4')) {
           fatalRow.style.display = 'flex'; let globalFatalDisabled = false;
+          if (myP.stealthTimer > 0) globalFatalDisabled = true;
           if (myP.fatalCd > 0) { globalFatalDisabled = true; if(fatalLabel) { fatalLabel.innerText = `狂击(CD:${myP.fatalCd}):`; } } 
           else { if(fatalLabel) { fatalLabel.innerText = `蚀命狂击:`; } }
 
@@ -1637,10 +1870,14 @@ function updateActionPanel(data) {
       const shieldBtn = document.getElementById('btn-shield');
       const duckBtn = document.getElementById('btn-duck');
       if (shieldBtn) {
-         if (hasTalent(myP, 'm_h3') && myP.h3State === '勿听') { shieldBtn.classList.add('disabled'); } else { shieldBtn.classList.remove('disabled'); }
+         if (hasTalent(myP, 'm_h3') && myP.h3State === '勿听') { shieldBtn.classList.add('disabled'); } 
+         else if (myP.stealthTimer > 0 && myP.stealthDefUsed) { shieldBtn.classList.add('disabled'); }
+         else { shieldBtn.classList.remove('disabled'); }
       }
       if (duckBtn) {
-         if (hasTalent(myP, 'm_h3') && myP.h3State === '勿听') { duckBtn.classList.add('disabled'); } else { duckBtn.classList.remove('disabled'); }
+         if (hasTalent(myP, 'm_h3') && myP.h3State === '勿听') { duckBtn.classList.add('disabled'); }
+         else if (myP.stealthTimer > 0 && myP.stealthDefUsed) { duckBtn.classList.add('disabled'); } 
+         else { duckBtn.classList.remove('disabled'); }
       }
 
       const holyBtn = document.getElementById('btn-holy');
@@ -1659,6 +1896,23 @@ function updateActionPanel(data) {
           if (myP.dualCd > 0) { dualBtn.classList.add('disabled'); dualBtn.innerText = `渡灵 (CD:${myP.dualCd})`; } 
           else { dualBtn.classList.remove('disabled'); dualBtn.innerText = `渡灵`; }
         } else { dualBtn.style.display = 'none'; }
+      }
+
+      const stealthBtn = document.getElementById('btn-stealth');
+      if (stealthBtn) {
+          if (hasTalent(myP, 'm_a6')) {
+              stealthBtn.style.display = 'inline-block';
+              if (myP.stealthCd > 0) { stealthBtn.classList.add('disabled'); stealthBtn.innerText = `缄默 (CD:${myP.stealthCd})`; }
+              else { stealthBtn.classList.remove('disabled'); stealthBtn.innerText = `缄默`; }
+          } else { stealthBtn.style.display = 'none'; }
+      }
+
+      const pocketBtn = document.getElementById('btn-pocket');
+      if (pocketBtn) {
+          if (hasTalent(myP, 'm_h1') && !myP.extraTalent && myP.pocketUses > 0 && myP.pocketInventory && myP.pocketInventory.length > 0) {
+              pocketBtn.style.display = 'inline-block';
+              pocketBtn.innerText = `万能口袋 (${myP.pocketUses})`;
+          } else { pocketBtn.style.display = 'none'; }
       }
     }
   } else {

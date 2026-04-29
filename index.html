@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pulse Strike - 异教徒之影 (v15.2 稳定版)</title>
+  <title>Pulse Strike - 异教徒之影 (v15.3 稳定版)</title>
   <link href="style.css" rel="stylesheet" type="text/css" />
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
@@ -63,18 +63,20 @@
           </div>
           
           <div id="changelog-module" style="grid-column: 1/-1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 15px; text-align: left;">
-            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.2)</div>
+            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.3)</div>
             <div class="rules-body" style="max-height: 140px; overflow-y: auto; font-size: 0.85em; padding-right: 8px;">
-              <p><strong>[平衡] 圣魔体系重构：</strong></p>
+              <p><strong>[重置] 苟且偷生大修 - 万能口袋：</strong></p>
               <ul>
-                <li><strong>圣戒 (加强)</strong>：使用【圣光】当回合进入霸体，免疫一切外界伤害。</li>
-                <li><strong>蚀命狂击 (削弱)</strong>：单次最高消耗弹药限制为 3 发。</li>
-                <li><strong>蚀骨封行 (重做)</strong>：改为充能制(上限2次，每5回合恢复)。使用后自身延迟3回合受到反噬伤害。</li>
+                <li>初始获取时，三维上限强制各扣减 2 点，生存环境急剧恶化。</li>
+                <li>死者的机缘将自动收入专属于你的“万能口袋”中。</li>
+                <li><strong>【苟且形态】</strong>：单机缘时，造成伤害-1。每3回合自动回盾，且遇袭时会自动消耗护盾抵挡非穿甲伤害。</li>
+                <li><strong>【偷生形态】</strong>：可消耗次数从口袋提取机缘，提取时必须进行一次三维上限的“等价交换”(一减一增)。机制机缘用完即退回口袋重新冷却；数值机缘挂载8回合后退回。</li>
               </ul>
-              <p><strong>[新增] 命运祈祷 - 无神论者：</strong></p>
-              <p>祈祷阶段新增常驻选项“无神论者”，选择后所有机缘纯随机分配，不带有任何阵营偏好。</p>
-              <p><strong>[优化] UI 与体验：</strong></p>
-              <p>优化了手机端对局界面的卡片排版，改为双列紧凑布局，告别频繁滑屏。</p>
+              <p><strong>[新增/调整] 其他圣魔机制：</strong></p>
+              <ul>
+                <li><strong>缄默无声 (新天使)</strong>：进入无声隐匿状态，冻结所有CD，免疫锁定，规避持续伤害，但极大限制防御和进攻手段。</li>
+                <li><strong>蚀骨封行 (调整)</strong>：受到封行的敌人进入重度虚弱，受到伤害减半且免疫致命一击。</li>
+              </ul>
             </div>
           </div>
 
@@ -226,6 +228,44 @@
     </div>
   </div>
 
+  <!-- 万能口袋模态框 -->
+  <div id="pocket-modal" class="fixed-overlay" style="display:none;" onclick="this.style.display='none'">
+      <div class="modal-content" onclick="event.stopPropagation()">
+        <h2 style="color:var(--gold); margin-top: 0;">🎒 万能口袋</h2>
+        <p style="color:#8b949e; font-size:0.85em; margin-bottom: 20px;">选择一个机缘进入【偷生】形态装备至第二槽位</p>
+        <div id="pocket-list" style="max-height: 250px; overflow-y: auto; text-align: left;"></div>
+        <button class="close-modal" onclick="document.getElementById('pocket-modal').style.display='none'">关闭口袋</button>
+      </div>
+  </div>
+
+  <!-- 等价交换模态框 -->
+  <div id="conservation-modal" class="fixed-overlay" style="display:none;" onclick="this.style.display='none'">
+      <div class="modal-content" onclick="event.stopPropagation()">
+        <h2 style="color:var(--purple); margin-top: 0;">⚖️ 等价交换</h2>
+        <p style="color:#8b949e; font-size:0.85em;">进入【偷生】必须遵守守恒法则</p>
+        
+        <div style="margin: 15px 0; text-align: left; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
+           <strong style="color:var(--red); display:block; margin-bottom: 10px;">👇 选择降低一项上限 (-1)</strong>
+           <div style="display:flex; gap: 15px;">
+              <label style="cursor:pointer;"><input type="radio" name="cons-dec" value="hp" style="accent-color:var(--red);"> 生命</label>
+              <label style="cursor:pointer;"><input type="radio" name="cons-dec" value="shield" style="accent-color:var(--red);"> 护盾</label>
+              <label style="cursor:pointer;"><input type="radio" name="cons-dec" value="ammo" style="accent-color:var(--red);"> 弹药</label>
+           </div>
+        </div>
+        <div style="margin: 15px 0; text-align: left; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
+           <strong style="color:var(--green); display:block; margin-bottom: 10px;">👆 选择提升一项上限 (+1)</strong>
+           <div style="display:flex; gap: 15px;">
+              <label style="cursor:pointer;"><input type="radio" name="cons-inc" value="hp" style="accent-color:var(--green);"> 生命</label>
+              <label style="cursor:pointer;"><input type="radio" name="cons-inc" value="shield" style="accent-color:var(--green);"> 护盾</label>
+              <label style="cursor:pointer;"><input type="radio" name="cons-inc" value="ammo" style="accent-color:var(--green);"> 弹药</label>
+           </div>
+        </div>
+
+        <button class="setup-btn host-btn" style="width:100%; padding:15px; font-size:1.1em; margin-top: 10px;" onclick="confirmConservation()">确认交换并装备</button>
+        <button class="back-link" onclick="document.getElementById('conservation-modal').style.display='none'; document.getElementById('pocket-modal').style.display='flex';">← 取消并返回口袋</button>
+      </div>
+  </div>
+
   <div id="game-container" style="display: none;">
     <div id="spectator-banner-game" style="display:none; background:var(--gold); color:#000; font-weight:bold; text-align:center; padding:10px; border-radius:8px; margin-bottom:15px; letter-spacing: 1px;">
       👁️ 观战模式：您正在实时观看激烈交锋
@@ -289,15 +329,6 @@
     </div>
 
     <div class="action-panel" id="action-panel-container">
-      
-      <div id="loot-panel" style="display: none; text-align: center; padding: 20px; background: rgba(210,153,34,0.1); border-radius: 12px; border: 1px solid rgba(210,153,34,0.3); margin-bottom: 15px;">
-        <h3 style="color:var(--gold); margin-top:0;">👺 苟且偷生：发现可掠夺的机缘！</h3>
-        <p id="loot-text" style="font-weight:bold; font-size:1.1em; color:#fff; white-space:pre-wrap;"></p>
-        <div style="display: flex; gap: 10px; margin-top: 15px;">
-          <button class="setup-btn host-btn" style="flex:1;" onclick="handleLootChoice(true)">夺取替换</button>
-          <button class="setup-btn" style="flex:1;" onclick="handleLootChoice(false)">放弃拾取</button>
-        </div>
-      </div>
 
       <div id="silenced-panel" style="display: none; text-align: center; padding: 30px; background: rgba(163,113,247,0.15); border-radius: 12px; border: 1px solid rgba(163,113,247,0.4); margin-bottom: 15px;">
         <h3 style="color:var(--purple); margin-top:0;">🔮 你已被【蚀骨封行】禁锢</h3>
@@ -320,7 +351,7 @@
         </div>
 
         <div class="action-group attack-zone">
-          <button class="btn-main reload-btn" onclick="handleInput('reload')">装弹 (RELOAD)</button>
+          <button class="btn-main reload-btn" id="btn-reload" onclick="handleInput('reload')">装弹 (RELOAD)</button>
           
           <div class="shoot-row" id="shoot-controls"></div>
           
@@ -329,7 +360,7 @@
             <div id="fatal-shoot-btns" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
           </div>
 
-          <!-- 异教徒专属技能组 -->
+          <!-- 异教徒/特有技能组 -->
           <div class="shoot-row" id="heretic-action-controls" style="display:none; margin-top: 15px; background: rgba(248, 81, 73, 0.1); padding: 8px; border-radius: 8px; border: 1px solid rgba(248, 81, 73, 0.3);">
             <button class="btn-t" id="btn-heretic-seal" style="background:var(--red) !important; width:100%; margin-bottom: 8px;" onclick="handleInput('heretic_seal')">蚀骨封行</button>
             <button class="btn-t" id="btn-symbiosis" style="background:#cf222e !important; width:100%;" onclick="handleInput('symbiosis')">共生 (绑定血量共享伤害)</button>
@@ -340,12 +371,14 @@
           <div class="tactical-grid">
             <button class="btn-t t-def" id="btn-shield" onclick="handleInput('shield')">防御</button>
             <button class="btn-t t-duck" id="btn-duck" onclick="handleInput('duck')">趴下</button>
-            <button class="btn-t t-spike" onclick="handleInput('ground_spike')">地刺</button>
-            <button class="btn-t t-rock" onclick="handleInput('rock')">石头</button>
+            <button class="btn-t t-spike" id="btn-spike" onclick="handleInput('ground_spike')">地刺</button>
+            <button class="btn-t t-rock" id="btn-rock" onclick="handleInput('rock')">石头</button>
             <button class="btn-t t-heal" id="btn-heal" onclick="handleInput('heal')">包扎</button>
             
             <button class="btn-t t-holy" id="btn-holy" onclick="handleInput('holy_light')" style="display:none;">圣光</button>
             <button class="btn-t t-dual" id="btn-dual" onclick="handleInput('dual_heal')" style="display:none;">渡灵</button>
+            <button class="btn-t" id="btn-stealth" onclick="handleInput('stealth_action')" style="display:none; background:#484f58 !important;">缄默</button>
+            <button class="btn-t" id="btn-pocket" onclick="openPocket()" style="display:none; background:var(--gold) !important; color:#000;">万能口袋</button>
           </div>
         </div>
       </div>
