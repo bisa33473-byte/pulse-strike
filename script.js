@@ -14,9 +14,10 @@ let myRole = null, roomRef = null, currentRoomId = "", isPvE = false;
 let gameState = null, gameVersion = 'stable', isProcessing = false; 
 let isRerollingGlobal = false;
 let selectedPocketIndex = -1;
+let currentLeaderboardTab = 'angel'; // 默认查看天使榜
 
 // ==================== 用户认证与缓存 ====================
-let currentUser = { uid: "", username: "", title: "初阶特工", avatar: "", stats: { total: 0, wins: 0 }, friends: {} };
+let currentUser = { uid: "", username: "", title: "初阶特工", avatar: "", signatureTalent: "", stats: { total: 0, wins: 0 }, factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} }, friends: {} };
 
 window.onload = function() {
   const cachedUid = localStorage.getItem('pulse_uid');
@@ -25,6 +26,7 @@ window.onload = function() {
       if (snap.val()) {
         currentUser = snap.val();
         if (!currentUser.stats) currentUser.stats = { total: 0, wins: 0 };
+        if (!currentUser.factions) currentUser.factions = { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} };
         if (!currentUser.friends) currentUser.friends = {};
         if (!currentUser.title) currentUser.title = "初阶特工";
         if (!currentUser.avatar) currentUser.avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
@@ -66,7 +68,7 @@ function handleRegister() {
     else {
       const newUid = Math.floor(100000 + Math.random() * 900000).toString();
       const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
-      const newUserObj = { uid: newUid, username: user, password: pass, title: "初阶特工", avatar: defaultAvatar, stats: { total: 0, wins: 0 }, online: true, roomStatus: 'idle' };
+      const newUserObj = { uid: newUid, username: user, password: pass, title: "初阶特工", avatar: defaultAvatar, signatureTalent: "", stats: { total: 0, wins: 0 }, factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} }, online: true, roomStatus: 'idle' };
       db.ref('users/' + newUid).set(newUserObj).then(function() {
         currentUser = newUserObj; localStorage.setItem('pulse_uid', newUid);
         setupPresence(); showHub();
@@ -89,6 +91,7 @@ function handleLogin() {
       if (data.password === pass) {
         currentUser = data;
         if (!currentUser.stats) currentUser.stats = { total: 0, wins: 0 };
+        if (!currentUser.factions) currentUser.factions = { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} };
         if (!currentUser.friends) currentUser.friends = {};
         if (!currentUser.title) currentUser.title = "初阶特工";
         if (!currentUser.avatar) currentUser.avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
@@ -140,7 +143,7 @@ function handleAvatarUpload(event) {
     reader.readAsDataURL(file);
 }
 
-// ==================== 主城 (Hub) ====================
+// ==================== 主城 (Hub) 与本命机缘选择 ====================
 function showHub() {
   document.getElementById('auth-overlay').style.display = 'none';
   document.getElementById('mode-overlay').style.display = 'none';
@@ -150,6 +153,19 @@ function showHub() {
   document.getElementById('hub-username').innerText = currentUser.username;
   document.getElementById('hub-uid').innerText = currentUser.uid;
   document.getElementById('hub-avatar').src = currentUser.avatar;
+
+  // 填充本命机缘下拉框
+  const sigSelect = document.getElementById('signature-talent-select');
+  sigSelect.innerHTML = '<option value="">-- 选择本命机缘 (可选) --</option>';
+  const allTalents = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
+  allTalents.forEach(t => {
+      let icon = t.type === 'angel' ? '👼' : (t.type === 'demon' ? '😈' : '👺');
+      let opt = document.createElement('option');
+      opt.value = t.name; opt.innerText = `${icon} ${t.name}`;
+      if (currentUser.signatureTalent === t.name) opt.selected = true;
+      sigSelect.appendChild(opt);
+  });
+
   listenToFriendRequests();
   updateMyPresence('idle', '', 0);
 }
@@ -161,6 +177,13 @@ function updateCustomTitle() {
     currentUser.title = newTitle; document.getElementById('hub-title').innerText = `[${newTitle}]`;
     document.getElementById('new-title-input').value = ""; alert("称号更新成功！");
   });
+}
+
+function updateSignatureTalent() {
+    const sel = document.getElementById('signature-talent-select').value;
+    db.ref('users/' + currentUser.uid + '/signatureTalent').set(sel).then(() => {
+        currentUser.signatureTalent = sel;
+    });
 }
 
 function openGameSelect() { 
@@ -276,9 +299,13 @@ function showProfile(uid) {
         document.getElementById('profile-title').innerText = `[${u.title || '特工'}]`;
         document.getElementById('profile-uid').innerText = u.uid;
 
+        const sigEl = document.getElementById('profile-signature');
+        if (u.signatureTalent) { sigEl.style.display = 'block'; sigEl.innerText = `本命: ${u.signatureTalent}`; } 
+        else { sigEl.style.display = 'none'; }
+
         let rate = 0; if (u.stats && u.stats.total > 0) rate = ((u.stats.wins / u.stats.total) * 100).toFixed(1);
         let wins = u.stats ? u.stats.wins : 0; let total = u.stats ? u.stats.total : 0;
-        document.getElementById('profile-rate').innerText = `${rate}% 胜率`;
+        document.getElementById('profile-rate').innerText = `${rate}% 总胜率`;
         document.getElementById('profile-stats').innerText = `${wins}胜 / ${total}局`;
 
         const btn = document.getElementById('btn-profile-add');
@@ -446,32 +473,71 @@ function spectateRoom(rid) {
     });
 }
 
-// ==================== 排行榜 ====================
+// ==================== 排行榜 (三系阵营与优势机缘) ====================
 function openLeaderboardModal() {
   document.getElementById('leaderboard-modal').style.display = 'flex';
-  const list = document.getElementById('leaderboard-list'); list.innerHTML = "<div style='text-align: center; color: #8b949e;'>正在拉取数据...</div>";
-  db.ref('users').once('value', function(snap) {
-    const data = snap.val(); if (!data) return;
-    let players = []; const uKeys = Object.keys(data);
-    for (let i = 0; i < uKeys.length; i++) {
-      let uData = data[uKeys[i]];
-      if (uData.stats && uData.stats.total > 0) {
-        let rate = (uData.stats.wins / uData.stats.total) * 100;
-        players.push({ uid: uData.uid, avatar: uData.avatar, name: uData.username, title: uData.title || "特工", total: uData.stats.total, wins: uData.stats.wins, rate: rate });
-      }
-    }
-    players.sort(function(a, b) { if (b.rate !== a.rate) return b.rate - a.rate; return b.total - a.total; });
-    list.innerHTML = "";
-    if (players.length === 0) { list.innerHTML = "<div style='text-align: center; color: #8b949e;'>暂无数据</div>"; return; }
-    for (let i = 0; i < players.length; i++) {
-      let p = players[i]; let rankColor = "#c9d1d9"; if (i === 0) rankColor = "#d29922"; if (i === 1) rankColor = "#c0c0c0"; if (i === 2) rankColor = "#cd7f32";
-      let avSrc = p.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
-      const item = document.createElement('div');
-      item.style.cssText = `background:rgba(0,0,0,0.5); padding:12px; margin-bottom:8px; border-radius:8px; border-left:4px solid ${rankColor}; display:flex; justify-content:space-between; align-items:center;`;
-      item.innerHTML = `<div style="display:flex; align-items:center; flex:1;"><span style="font-weight:bold; font-size:1.1em; color:${rankColor}; margin-right:10px; width:25px;">#${i+1}</span><img src="${avSrc}" style="width:30px; height:30px; border-radius:50%; border:1px solid var(--border); margin-right:10px; object-fit:cover;"><div style="display:flex; flex-direction:column; line-height:1.2;"><span style="font-size:0.75em; color:var(--gold);">[${p.title}]</span><span style="font-weight:bold; color:#fff;">${p.name}</span></div></div><div style="text-align:right;"><div style="color:var(--green); font-weight:bold; font-size:1.1em;">${p.rate.toFixed(1)}%</div><div style="color:#8b949e; font-size:0.7em;">${p.wins}胜 / ${p.total}局</div></div>`;
-      list.appendChild(item);
-    }
-  });
+  switchLeaderboardTab(currentLeaderboardTab);
+}
+
+function switchLeaderboardTab(faction) {
+    currentLeaderboardTab = faction;
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.tab-btn.${faction}`).classList.add('active');
+
+    const list = document.getElementById('leaderboard-list'); 
+    list.innerHTML = "<div style='text-align: center; color: #8b949e;'>正在拉取机密数据...</div>";
+
+    db.ref('users').once('value', function(snap) {
+        const data = snap.val(); if (!data) return;
+        let players = []; const uKeys = Object.keys(data);
+
+        for (let i = 0; i < uKeys.length; i++) {
+            let uData = data[uKeys[i]];
+            if (uData.factions && uData.factions[faction] && uData.factions[faction].total > 0) {
+                let fStats = uData.factions[faction];
+                let rate = (fStats.wins / fStats.total) * 100;
+
+                // 计算优势机缘
+                let advTalent = "无数据"; let maxCount = 0;
+                if (fStats.history) {
+                    for (let tName in fStats.history) {
+                        if (fStats.history[tName] > maxCount) { maxCount = fStats.history[tName]; advTalent = tName; }
+                    }
+                }
+
+                players.push({ 
+                    uid: uData.uid, avatar: uData.avatar, name: uData.username, title: uData.title || "特工", 
+                    total: fStats.total, wins: fStats.wins, rate: rate, advantage: advTalent 
+                });
+            }
+        }
+
+        players.sort(function(a, b) { if (b.rate !== a.rate) return b.rate - a.rate; return b.total - a.total; });
+        list.innerHTML = "";
+        if (players.length === 0) { list.innerHTML = "<div style='text-align: center; color: #8b949e;'>暂无数据</div>"; return; }
+
+        for (let i = 0; i < players.length; i++) {
+            let p = players[i]; let rankColor = "#c9d1d9"; if (i === 0) rankColor = "#d29922"; if (i === 1) rankColor = "#c0c0c0"; if (i === 2) rankColor = "#cd7f32";
+            let avSrc = p.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
+            const item = document.createElement('div');
+            item.style.cssText = `background:rgba(0,0,0,0.5); padding:12px; margin-bottom:8px; border-radius:8px; border-left:4px solid ${rankColor}; display:flex; justify-content:space-between; align-items:center;`;
+            item.innerHTML = `
+               <div style="display:flex; align-items:center; flex:1;">
+                   <span style="font-weight:bold; font-size:1.1em; color:${rankColor}; margin-right:10px; width:25px;">#${i+1}</span>
+                   <img src="${avSrc}" style="width:36px; height:36px; border-radius:50%; border:1px solid var(--border); margin-right:10px; object-fit:cover;">
+                   <div style="display:flex; flex-direction:column; line-height:1.3;">
+                       <span><span style="font-size:0.75em; color:var(--gold);">[${p.title}]</span> <span style="font-weight:bold; color:#fff;">${p.name}</span></span>
+                       <span class="advantage-badge">优势: ${p.advantage}</span>
+                   </div>
+               </div>
+               <div style="text-align:right;">
+                   <div style="color:var(--green); font-weight:bold; font-size:1.1em;">${p.rate.toFixed(1)}%</div>
+                   <div style="color:#8b949e; font-size:0.7em;">${p.wins}胜 / ${p.total}局</div>
+               </div>
+            `;
+            list.appendChild(item);
+        }
+    });
 }
 
 // ==================== 核心机制判定辅助函数 ====================
@@ -501,6 +567,31 @@ function isMoveFromTalent(move, talentId) {
     const map = { 'm_a2': 'holy_light', 'm_a4': 'dual_heal', 'm_d4': 'fatal_shoot', 'm_h2': 'heretic_seal', 'm_h4': 'symbiosis', 'm_a6': 'stealth_action' };
     return map[talentId] === move;
 }
+
+// 异教徒(heretic)与圣魔机缘池
+const TALENT_POOL = {
+  numerical: [
+    { id: 'n_d1', type: 'demon', category: '数值', name: '军火狂人', desc: '弹药 +4，血量与上限 -3\n代价：第一回合绝对禁止射击。' },
+    { id: 'n_d2', type: 'demon', category: '数值', name: '叹息之墙', desc: '护盾 +3，血量与上限 -3\n代价：容错极低的防御型，考验身法。' }
+  ],
+  mechanism: [
+    { id: 'm_a1', type: 'angel', category: '机制', name: '圣盾坚壁', desc: '使用防御时获得 2 层护盾。\n代价：单次射击最高被限制为 2 发。' },
+    { id: 'm_a2', type: 'angel', category: '机制', name: '圣戒', desc: '专属动作【圣光】(每5回合可用)：无视防御抽取目标1血量反哺自身。发动该动作的回合，自身进入霸体状态，免疫一切外界伤害。\n代价：丧失【包扎】能力。' },
+    { id: 'm_a3', type: 'angel', category: '机制', name: '神圣复苏', desc: '回合末，若本回合未受伤害且未射击，恢复 1 点血。\n(触发后进入 2 回合冷却)' },
+    { id: 'm_a4', type: 'angel', category: '机制', name: '双向渡灵', desc: '专属动作【渡灵】(每4回合可用)：无消耗。50%概率恢复自身1血，50%概率随机给一名存活敌人恢复1血。' },
+    { id: 'm_a5', type: 'angel', category: '机制', name: '归光还魂', desc: '受致命伤时复活并回满血但清空弹盾。复活后血盾上限降低(双人-2/三人-3/四人-4)，15回合后上限部分恢复。若上限归零则被教廷彻底抹杀。\n充能：开局自带1次，第80、120回合及之后每40回合补充至1次。' },
+    { id: 'm_a6', type: 'angel', category: '机制', name: '缄默无声', desc: '血量上限-2。专属动作【缄默】(每10回合可用)：进入持续5回合的隐匿状态。隐匿期间所有CD冻结，无法开火或装弹，无法被指定为攻击目标，持续伤害Buff不生效；期间防卫技能(防御/趴下)只能使用1次。\n(血量首次低于3时会自动触发一次免费隐匿)' },
+    { id: 'm_d1', type: 'demon', category: '机制', name: '深渊魔弹', desc: '你的射击必定穿甲（无视护盾直接扣血）。\n代价：你永久无法使用防御动作。' },
+    { id: 'm_d2', type: 'demon', category: '机制', name: '嗜血狂热', desc: '装弹时流失 1 血量，但获得 3 发子弹。\n(触发后 2 回合内只能普通装弹；1血时触发濒死保护停止扣血)' },
+    { id: 'm_d3', type: 'demon', category: '机制', name: '贪婪吞噬', desc: '射击若对目标造成掉血，吸取 1 点生命。\n(触发后进入 2 回合冷却) 代价：血量上限 -2，护盾上限固定为 2。' },
+    { id: 'm_d4', type: 'demon', category: '机制', name: '蚀命狂击', desc: '专属动作【狂击】(每3回合可用)：单次最多消耗3发弹药。60%概率伤害翻倍；20%射击失效且反噬一半伤害(不耗弹)；20%哑火空枪(耗弹)。' },
+
+    { id: 'm_h1', type: 'heretic', category: '机制', name: '苟且偷生', desc: '被动：全场唯一候选。获取时三维上限-2。场上其他玩家死亡时，机缘自动收入你的“万能口袋”。\n【苟且形态】(1个机缘)：每3回合自动回盾；遇袭自动消耗护盾抵御非穿甲伤害；造成的伤害-1。\n【偷生形态】(2个机缘)：可消耗提取次数从口袋装备机缘，需进行等价交换(一项上限-1另一项+1)。数值机缘持续8回合，机制机缘可用1次，结束后退回口袋并恢复苟且形态。' },
+    { id: 'm_h2', type: 'heretic', category: '机制', name: '蚀骨封行', desc: '专属动作【封行】(上限2次，每5回合恢复1次，使用后CD3回合)：指定一位玩家，使其下回合被禁锢，且受封行影响期间受到的伤害减半且免疫致死。\n代价：每次使用后经过3回合，自身会受1点反噬伤害(无视防御)。' },
+    { id: 'm_h3', type: 'heretic', category: '机制', name: '勿视勿听', desc: '被动：血盾弹上限及初始值均+1。周期性切换状态。初始【勿视】:禁用开火，护盾+1，持续5回合。\n【勿听】:禁用防御与趴下，造成伤害+2，持续3回合。' },
+    { id: 'm_h4', type: 'heretic', category: '机制', name: '共生', desc: '专属动作【共生】(每3回合可用)：与指定目标血量绑定一回合。若你本回合受到攻击扣血，对方将同时扣除同等血量。\n代价：若对方在本回合死亡，你将同时殉葬死亡。' }
+  ]
+};
 
 // ==================== 数据生成器 ====================
 function getInitialState(capacity) {
@@ -536,33 +627,9 @@ function createBasePlayer(currentHp, maxHp, maxAmmo, maxShield) {
   };
 }
 
-// 异教徒(heretic)与圣魔机缘池
-const TALENT_POOL = {
-  numerical: [
-    { id: 'n_d1', type: 'demon', category: '数值', name: '军火狂人', desc: '弹药 +4，血量与上限 -3\n代价：第一回合绝对禁止射击。' },
-    { id: 'n_d2', type: 'demon', category: '数值', name: '叹息之墙', desc: '护盾 +3，血量与上限 -3\n代价：容错极低的防御型，考验身法。' }
-  ],
-  mechanism: [
-    { id: 'm_a1', type: 'angel', category: '机制', name: '圣盾坚壁', desc: '使用防御时获得 2 层护盾。\n代价：单次射击最高被限制为 2 发。' },
-    { id: 'm_a2', type: 'angel', category: '机制', name: '圣戒', desc: '专属动作【圣光】(每5回合可用)：无视防御抽取目标1血量反哺自身。发动该动作的回合，自身进入霸体状态，免疫一切外界伤害。\n代价：丧失【包扎】能力。' },
-    { id: 'm_a3', type: 'angel', category: '机制', name: '神圣复苏', desc: '回合末，若本回合未受伤害且未射击，恢复 1 点血。\n(触发后进入 2 回合冷却)' },
-    { id: 'm_a4', type: 'angel', category: '机制', name: '双向渡灵', desc: '专属动作【渡灵】(每4回合可用)：无消耗。50%概率恢复自身1血，50%概率随机给一名存活敌人恢复1血。' },
-    { id: 'm_a5', type: 'angel', category: '机制', name: '归光还魂', desc: '受致命伤时复活并回满血但清空弹盾。复活后血盾上限降低(双人-2/三人-3/四人-4)，15回合后上限部分恢复。若上限归零则被教廷彻底抹杀。\n充能：开局自带1次，第80、120回合及之后每40回合补充至1次。' },
-    { id: 'm_a6', type: 'angel', category: '机制', name: '缄默无声', desc: '血量上限-2。专属动作【缄默】(每10回合可用)：进入持续5回合的隐匿状态。隐匿期间所有CD冻结，无法开火或装弹，无法被指定为攻击目标，持续伤害Buff不生效；期间防卫技能(防御/趴下)只能使用1次。\n(血量首次低于3时会自动触发一次免费隐匿)' },
-    { id: 'm_d1', type: 'demon', category: '机制', name: '深渊魔弹', desc: '你的射击必定穿甲（无视护盾直接扣血）。\n代价：你永久无法使用防御动作。' },
-    { id: 'm_d2', type: 'demon', category: '机制', name: '嗜血狂热', desc: '装弹时流失 1 血量，但获得 3 发子弹。\n(触发后 2 回合内只能普通装弹；1血时触发濒死保护停止扣血)' },
-    { id: 'm_d3', type: 'demon', category: '机制', name: '贪婪吞噬', desc: '射击若对目标造成掉血，吸取 1 点生命。\n(触发后进入 2 回合冷却) 代价：血量上限 -2，护盾上限固定为 2。' },
-    { id: 'm_d4', type: 'demon', category: '机制', name: '蚀命狂击', desc: '专属动作【狂击】(每3回合可用)：单次最多消耗3发弹药。60%概率伤害翻倍；20%射击失效且反噬一半伤害(不耗弹)；20%哑火空枪(耗弹)。' },
-
-    { id: 'm_h1', type: 'heretic', category: '机制', name: '苟且偷生', desc: '被动：全场唯一候选。获取时三维上限-2。场上其他玩家死亡时，机缘自动收入你的“万能口袋”。\n【苟且形态】(1个机缘)：每3回合自动回盾；遇袭自动消耗护盾抵御非穿甲伤害；造成的伤害-1。\n【偷生形态】(2个机缘)：可消耗提取次数从口袋装备机缘，需进行等价交换(一项上限-1另一项+1)。数值机缘持续8回合，机制机缘可用1次，结束后退回口袋并恢复苟且形态。' },
-    { id: 'm_h2', type: 'heretic', category: '机制', name: '蚀骨封行', desc: '专属动作【封行】(上限2次，每5回合恢复1次，使用后CD3回合)：指定一位玩家，使其下回合被禁锢，且受封行影响期间受到的伤害减半且免疫致死。\n代价：每次使用后经过3回合，自身会受1点反噬伤害(无视防御)。' },
-    { id: 'm_h3', type: 'heretic', category: '机制', name: '勿视勿听', desc: '被动：血盾弹上限及初始值均+1。周期性切换状态。初始【勿视】:禁用开火，护盾+1，持续5回合。\n【勿听】:禁用防御与趴下，造成伤害+2，持续3回合。' },
-    { id: 'm_h4', type: 'heretic', category: '机制', name: '共生', desc: '专属动作【共生】(每3回合可用)：与指定目标血量绑定一回合。若你本回合受到攻击扣血，对方将同时扣除同等血量。\n代价：若对方在本回合死亡，你将同时殉葬死亡。' }
-  ]
-};
-
 // ==================== 建立与加入 ====================
-function selectMode(mode, cap = 2) {
+function selectMode(mode, cap) {
+  cap = cap || 2;
   isPvE = (mode === 'pve');
   document.getElementById('mode-overlay').style.display = 'none';
   document.getElementById('game-container').style.display = 'block';
@@ -570,22 +637,15 @@ function selectMode(mode, cap = 2) {
     document.getElementById('room-setup').style.display = 'none'; myRole = 'p1';
     gameState = getInitialState(cap);
     gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title; gameState.p1.avatar = currentUser.avatar;
-
     let aiNames = ["机甲卫士", "深渊投影", "虚空矩阵"];
     for (let i = 2; i <= cap; i++) {
-       let pk = 'p' + i;
-       gameState[pk].uid = "00000" + i;
-       gameState[pk].username = "AI - " + aiNames[i-2];
-       gameState[pk].title = "机械领主";
-       gameState[pk].talent = null; gameState[pk].extraTalent = null;
-       gameState[pk].pendingLoot = null; gameState[pk].reviveCharges = 0;
-       gameState[pk].joined = true; gameState[pk].ready = true;
+      let pk = 'p' + i;
+      gameState[pk].uid = "00000" + i; gameState[pk].username = "AI - " + aiNames[i-2]; gameState[pk].title = "机械领主";
+      gameState[pk].talent = null; gameState[pk].extraTalent = null; gameState[pk].pendingLoot = null; gameState[pk].reviveCharges = 0;
+      gameState[pk].joined = true; gameState[pk].ready = true;
     }
-
-    gameState.p1.talent = null; gameState.p1.extraTalent = null;
-    gameState.p1.pendingLoot = null; gameState.p1.reviveCharges = 0;
+    gameState.p1.talent = null; gameState.p1.extraTalent = null; gameState.p1.pendingLoot = null; gameState.p1.reviveCharges = 0;
     gameState.status = 'playing'; gameState.p1.joined = true; gameState.p1.ready = true;
-
     if (gameVersion === 'beta') triggerPrayerPhase(false); else render(gameState);
   } else { document.getElementById('room-setup').style.display = 'flex'; }
 }
@@ -597,43 +657,93 @@ function createRoom(capacity) {
   roomRef = db.ref(dbPath + rid);
   let newRoom = getInitialState(capacity);
   newRoom.p1.joined = true; newRoom.p1.uid = currentUser.uid; newRoom.p1.username = currentUser.username; newRoom.p1.title = currentUser.title; newRoom.p1.avatar = currentUser.avatar;
-  roomRef.set(newRoom); 
-  roomRef.onDisconnect().remove(); 
+  roomRef.set(newRoom);
+  roomRef.onDisconnect().remove();
   updateMyPresence('waiting', rid, 0);
-  setupRoomListener(rid);
   listenToJoinRequests();
+  setupRoomListener(rid);
 }
 
 function joinRoomWithId(explicitId) {
-  const rid = explicitId.toUpperCase().trim();
+  const rid = (explicitId || "").toUpperCase().trim();
+  if (rid.length !== 5) { alert("房间码为5位！"); return; }
   const dbPath = gameVersion === 'beta' ? "rooms_beta/" : "rooms_v2/";
-  const tempRef = db.ref(dbPath + rid);
-  tempRef.once('value', function(snap) {
-    let data = snap.val(); if (!data) return alert("❌ 房间不存在！(检查版本或房间码)");
-    const cap = data.config.capacity; let isAssigned = false;
-    if (data.status === 'playing' || data.status === 'finished') {
-      if (cap >= 2 && !data.p2.joined && data.p2.hp > 0) { myRole = 'p2'; isAssigned = true; }
-      else if (cap >= 3 && !data.p3.joined && data.p3.hp > 0) { myRole = 'p3'; isAssigned = true; }
-      else if (cap === 4 && !data.p4.joined && data.p4.hp > 0) { myRole = 'p4'; isAssigned = true; }
-    } else {
-      if (cap >= 2 && !data.p2.joined) { myRole = 'p2'; isAssigned = true; }
-      else if (cap >= 3 && !data.p3.joined) { myRole = 'p3'; isAssigned = true; }
-      else if (cap === 4 && !data.p4.joined) { myRole = 'p4'; isAssigned = true; }
-    }
-    if (!isAssigned) { myRole = 'spectator'; alert("房间满，进入隐匿观战模式！"); }
-    currentRoomId = rid; roomRef = tempRef; document.getElementById('room-setup').style.display = 'none';
-    if (myRole !== 'spectator') {
-      roomRef.child(myRole).update({ joined: true, ready: false, uid: currentUser.uid, username: currentUser.username, title: currentUser.title, avatar: currentUser.avatar });
-      roomRef.child(myRole).onDisconnect().update({ joined: false, ready: false });
-      updateMyPresence(data.status === 'playing' ? 'playing' : 'waiting', rid, data.round || 0);
-    }
+  roomRef = db.ref(dbPath + rid);
+  roomRef.once('value', function(snap) {
+    const data = snap.val();
+    if (!data) { alert("找不到该房间，请确认房间码。"); return; }
+    if (data.status !== 'waiting') { alert("该房间已在游戏中，无法加入。"); return; }
+    const cap = data.config.capacity;
+    let slot = null;
+    if (cap >= 2 && (!data.p2 || !data.p2.joined)) slot = 'p2';
+    else if (cap >= 3 && (!data.p3 || !data.p3.joined)) slot = 'p3';
+    else if (cap >= 4 && (!data.p4 || !data.p4.joined)) slot = 'p4';
+    if (!slot) { alert("该房间已满！"); return; }
+    myRole = slot; currentRoomId = rid;
+    document.getElementById('room-setup').style.display = 'none';
+    roomRef.child(slot).update({ joined: true, uid: currentUser.uid, username: currentUser.username, title: currentUser.title, avatar: currentUser.avatar });
+    updateMyPresence('waiting', rid, 0);
     setupRoomListener(rid);
   });
 }
 
 function joinRoom() {
-  const ridInput = document.getElementById('roomInput').value; if (!ridInput) return alert("请输入房间码！");
-  joinRoomWithId(ridInput);
+  const rid = document.getElementById('roomInput').value.trim().toUpperCase();
+  joinRoomWithId(rid);
+}
+
+// 核心更新：局内房间聊天
+function sendRoomChat() {
+    const input = document.getElementById('room-chat-input');
+    const text = input.value.trim();
+    if (!text || !currentRoomId) return;
+    if (text.length > 40) return alert("内容过长！");
+
+    const msgObj = {
+        uid: currentUser.uid, username: currentUser.username, 
+        avatar: currentUser.avatar || '', text: text, timestamp: Date.now()
+    };
+    db.ref(`rooms_chat/${currentRoomId}`).push(msgObj);
+    input.value = '';
+}
+
+function listenToRoomChat(rid) {
+    db.ref(`rooms_chat/${rid}`).on('value', snap => {
+        const list = document.getElementById('room-chat-list');
+        list.innerHTML = "";
+        const data = snap.val(); if (!data) return;
+
+        let messages = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
+        let lastTime = 0;
+
+        messages.forEach(msg => {
+            // 时间间隔超过 15分钟 (900000ms)，则插入时间分割线
+            if (msg.timestamp - lastTime > 900000) {
+                let dateStr = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                list.innerHTML += `<div class="chat-time-divider">${dateStr}</div>`;
+            }
+            lastTime = msg.timestamp;
+
+            let isSelf = (msg.uid === currentUser.uid);
+            let cssClass = isSelf ? 'chat-msg self' : 'chat-msg';
+            let avatarSrc = msg.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
+
+            list.innerHTML += `
+                <div class="${cssClass}">
+                    <img src="${avatarSrc}" class="chat-avatar">
+                    <div class="chat-content">
+                        ${!isSelf ? `<div class="chat-header"><span class="chat-name">${msg.username}</span></div>` : ''}
+                        <div class="chat-text">${msg.text}</div>
+                    </div>
+                </div>
+            `;
+        });
+        list.scrollTop = list.scrollHeight;
+    });
+
+    document.getElementById('room-chat-input').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') sendRoomChat();
+    });
 }
 
 function setupRoomListener(rid) {
@@ -644,6 +754,8 @@ function setupRoomListener(rid) {
     if (gameState.status === 'waiting') renderLobby(rid);
     else { document.getElementById('waiting-room').style.display = 'none'; document.getElementById('game-container').style.display = 'block'; render(gameState); checkRoundStart(); }
   });
+
+  if (myRole !== 'spectator' && !isPvE) { listenToRoomChat(rid); }
 }
 
 function renderLobby(rid) {
@@ -695,10 +807,11 @@ function exitGame() {
     if (myRole === 'spectator') { location.reload(); return; }
     let msg = myRole === 'p1' && gameState.status === 'waiting' ? "你是房主，大厅阶段离开将解散房间。" : "确定退出战区？退出后你将被系统强行抹杀，且其余特工将继续游戏！";
     if (confirm(msg)) {
-      if (myRole === 'p1' && gameState.status === 'waiting') roomRef.remove().then(function(){location.reload();}); 
-      else {
+      if (myRole === 'p1' && gameState.status === 'waiting') {
+          db.ref(`rooms_chat/${currentRoomId}`).remove(); // 房主解散顺便清理聊天室
+          roomRef.remove().then(function(){location.reload();}); 
+      } else {
          if (gameState.status === 'playing') {
-             // 局内强退，留尸体
              roomRef.child(myRole).update({ joined: false, move: 'quit' }).then(function(){location.reload();});
          } else {
              roomRef.child(myRole).update({ joined: false, ready: false }).then(function(){location.reload();});
@@ -710,7 +823,7 @@ function exitGame() {
 
 function handleSurrender() {
    if (!gameState || !myRole || myRole === 'spectator' || !gameState[myRole]) return;
-   if (gameState.status !== 'playing') return; // Prevent surrendering when game is over
+   if (gameState.status !== 'playing') return; 
    if (gameState[myRole].hp <= 0) return;
    if (confirm("是否确认荣誉殉国 (认输)？你的机缘将被他人搜刮！")) {
        if (isPvE) {
@@ -742,7 +855,7 @@ function triggerPrayerPhase(isReroll) {
       icon = '🎲'; label = '无神论者'; color = '#6e7681'; boostName = '纯随机分配';
     } else {
       icon = bias === 'angel' ? '👼' : (bias === 'demon' ? '😈' : '👺');
-      label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆深渊' : '追随禁忌');
+      label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆听深渊' : '追随禁忌');
       color = bias === 'angel' ? 'var(--green)' : (bias === 'demon' ? 'var(--purple)' : 'var(--red)');
       let faction = bias === 'angel' ? '天使' : (bias === 'demon' ? '恶魔' : '异教徒');
       boostName = `${faction}机缘 +50%`;
@@ -1695,24 +1808,53 @@ function processRound() {
      }
   }
 
-  let stillAliveCount = 0; let winner = "";
-  for (let i = 0; i < allKeys.length; i++) { if (data[allKeys[i]] && data[allKeys[i]].hp > 0) { stillAliveCount++; winner = allKeys[i]; } }
+  let aliveKeysFinal = []; let sortedRanks = [];
+  for (let i = 0; i < allKeys.length; i++) {
+      if (data[allKeys[i]] && data[allKeys[i]].joined) {
+          sortedRanks.push(data[allKeys[i]]);
+          if (data[allKeys[i]].hp > 0) aliveKeysFinal.push(allKeys[i]);
+      }
+  }
 
-  if (stillAliveCount <= 1) {
-    let winStr = (stillAliveCount === 0) ? "惨烈战况，全军覆没！" : `🎉 玩家 [${data[winner].username || winner.toUpperCase()}] 取得胜利！`;
+  if (aliveKeysFinal.length <= 1) {
+    let winStr = (aliveKeysFinal.length === 0) ? "惨烈战况，全军覆没！" : `🎉 玩家 [${data[aliveKeysFinal[0]].username || aliveKeysFinal[0].toUpperCase()}] 取得胜利！`;
     data.log += `<div class="win-msg" style="margin-top:20px;">${winStr}</div>`;
     data.status = 'finished'; data.playAgain = { p1: false, p2: false, p3: false, p4: false };
 
     if (myRole === 'p1' && !isPvE) {
-      for (let i = 0; i < allKeys.length; i++) {
-        const pk = allKeys[i];
-        if (data[pk] && data[pk].joined && data[pk].uid) {
-          let userUid = data[pk].uid; let isWinner = (data[pk].hp > 0 && stillAliveCount === 1);
-          db.ref('users/' + userUid + '/stats').once('value', function(snap) {
-            let s = snap.val() || { total: 0, wins: 0 };
-            s.total += 1; if (isWinner) s.wins += 1; db.ref('users/' + userUid + '/stats').set(s);
+      // 计算阵营胜率 (排名前50%算赢)
+      sortedRanks.sort((a,b) => b.hp - a.hp);
+      let threshold = Math.ceil(cap / 2); // 2人前1, 3人前2(按要求你想要3人前1? 这里按通用向上取整, 如你所说3人第1算胜，那直接阈值为1？我尊重你的原话：三人模式里第一名，所以我修正阈值)
+      if (cap === 3) threshold = 1;
+      if (cap === 2) threshold = 1;
+      if (cap === 4) threshold = 2;
+
+      for (let r = 0; r < sortedRanks.length; r++) {
+          let pkData = sortedRanks[r];
+          if (!pkData.uid) continue;
+          let isWinner = r < threshold && pkData.hp > 0;
+          let uUid = pkData.uid;
+          let factionUsed = pkData.talent ? pkData.talent.type : null;
+          let tName = pkData.talent ? pkData.talent.name : null;
+
+          db.ref('users/' + uUid).once('value', snap => {
+              let u = snap.val(); if (!u) return;
+              if (!u.factions) u.factions = { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} };
+              if (!u.stats) u.stats = { total: 0, wins: 0 };
+
+              u.stats.total += 1;
+              if (isWinner) u.stats.wins += 1;
+
+              if (factionUsed && u.factions[factionUsed]) {
+                  u.factions[factionUsed].total += 1;
+                  if (isWinner) {
+                      u.factions[factionUsed].wins += 1;
+                      if (!u.factions[factionUsed].history) u.factions[factionUsed].history = {};
+                      u.factions[factionUsed].history[tName] = (u.factions[factionUsed].history[tName] || 0) + 1;
+                  }
+              }
+              db.ref('users/' + uUid).set(u);
           });
-        }
       }
     }
   }
@@ -1780,7 +1922,10 @@ function resetRoomForRematch(oldData) {
   newData.round = 1;
   newData.status = 'waiting';
 
-  if (roomRef) roomRef.set(newData);
+  if (roomRef) {
+      db.ref(`rooms_chat/${currentRoomId}`).remove(); // 重开清理聊天
+      roomRef.set(newData);
+  }
 }
 
 // ==================== 渲染引擎 (DOM 接驳) ====================

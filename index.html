@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Pulse Strike - 异教徒之影 (v15.4 稳定版)</title>
+  <title>Pulse Strike - 异教徒之影 (v15.5 进阶版)</title>
   <link href="style.css" rel="stylesheet" type="text/css" />
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
@@ -57,9 +57,15 @@
                   UID: <span id="hub-uid" style="color: var(--cyan);">------</span>
                 </div>
               </div>
-              <div style="margin-top: 10px; display: flex; gap: 10px;">
-                <input type="text" id="new-title-input" class="cyber-input" placeholder="自定义新称号" maxlength="8" style="margin-bottom: 0; flex: 2; height: 32px; font-size: 0.9em;">
-                <button class="setup-btn" style="flex: 1; padding: 0 10px; height: 32px;" onclick="updateCustomTitle()">修改称号</button>
+              <!-- 新增本命机缘选择区 -->
+              <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 5px;">
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="new-title-input" class="cyber-input" placeholder="自定义新称号" maxlength="8" style="margin-bottom: 0; flex: 2; height: 32px; font-size: 0.9em;">
+                    <button class="setup-btn" style="flex: 1; padding: 0 10px; height: 32px;" onclick="updateCustomTitle()">更新</button>
+                </div>
+                <select id="signature-talent-select" class="cyber-select" onchange="updateSignatureTalent()">
+                    <option value="">-- 选择本命机缘 (可选) --</option>
+                </select>
               </div>
           </div>
         </div>
@@ -68,22 +74,21 @@
           <div style="grid-column: 1/-1; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
             <button class="mode-btn mode-pvp" style="margin:0;" onclick="openGameSelect()">⚔️ 进入战区 (开始游戏)</button>
             <button class="mode-btn" style="background: #1f6feb; margin:0;" onclick="openFriendsModal()">👥 特工通讯 (好友)</button>
-            <!-- 终端广播入口 -->
             <button class="mode-btn" style="background: #2ea043; margin:0; grid-column: 1/-1;" onclick="openGlobalChat()">🌐 终端广播 (世界频道)</button>
           </div>
           
           <div id="changelog-module" style="grid-column: 1/-1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 15px; text-align: left;">
-            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.4)</div>
+            <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.5)</div>
             <div class="rules-body" style="max-height: 140px; overflow-y: auto; font-size: 0.85em; padding-right: 8px;">
-              <p><strong>[社交] 全面时装头像与世界频道：</strong></p>
+              <p><strong>[社交] 局内聊天与本命机缘：</strong></p>
               <ul>
-                <li>点击主界面头像可上传自定义照片 (自动压缩，不吃内存)。</li>
-                <li>新增世界频道，支持“你的可能好友”探测系统，周更清理防超载。</li>
+                <li>联机房间内新增独立局内聊天，自动显示聊天时间断层线，气泡左右分明。</li>
+                <li>个人面板新增“本命机缘”选择，展现你的专属信仰。</li>
               </ul>
-              <p><strong>[体验] 好友房间跃迁与防退机制：</strong></p>
+              <p><strong>[竞技] 三系阵营荣耀榜单：</strong></p>
               <ul>
-                <li>好友列表全景展示对方实时状态 (房间号/激战回合数)，支持一键申请跃迁入房或观战。</li>
-                <li>新增局内【认输】选项，退出游戏不再解散全房间，改为个人系统抹杀。</li>
+                <li>胜率榜单重制，分为天使、恶魔、异教徒三个专榜，并根据战绩自动计算出你的【优势机缘】挂载至排行榜名片。</li>
+                <li>好友列表新增【一键刷新】按钮。</li>
               </ul>
             </div>
           </div>
@@ -96,7 +101,7 @@
     </div>
   </div>
 
-  <!-- 世界聊天模态框 (点击外部空白防黑屏恢复显示hub) -->
+  <!-- 世界聊天模态框 -->
   <div id="chat-modal" class="fixed-overlay" style="display:none;" onclick="this.style.display='none'; document.getElementById('hub-overlay').style.display='flex';">
     <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 550px; width: 95%;">
       <h2 style="color: var(--cyan); margin-top: 0; text-align: center;">🌐 终端广播 (世界频道)</h2>
@@ -106,7 +111,6 @@
         <input type="text" id="chat-input" class="cyber-input" placeholder="输入广播内容 (最多30字)..." maxlength="30" style="margin-bottom: 0; flex: 3; height: 42px;">
         <button class="setup-btn host-btn" style="flex: 1; padding: 0 15px;" onclick="sendChatMessage()">发送</button>
       </div>
-      <!-- 关闭按钮绑定了恢复大厅显示 -->
       <button class="close-modal" onclick="document.getElementById('chat-modal').style.display='none'; document.getElementById('hub-overlay').style.display='flex';">关闭终端</button>
     </div>
   </div>
@@ -118,8 +122,11 @@
        <h3 style="margin: 0; color: #fff;" id="profile-name">Name</h3>
        <p style="color: var(--gold); font-size: 0.9em; margin-top: 5px;" id="profile-title">[Title]</p>
        <p style="color: #8b949e; font-family: monospace;">UID: <span id="profile-uid" style="color:var(--cyan)"></span></p>
+       <!-- 本命机缘展示 -->
+       <div id="profile-signature" style="margin-top:5px; font-size:0.85em; color:var(--purple); display:none;"></div>
+
        <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; margin: 15px 0;">
-           <div style="color:var(--green); font-weight:bold; font-size:1.2em;" id="profile-rate">0% 胜率</div>
+           <div style="color:var(--green); font-weight:bold; font-size:1.2em;" id="profile-rate">0% 总胜率</div>
            <div style="color:#8b949e; font-size:0.8em;" id="profile-stats">0胜 / 0局</div>
        </div>
        <button class="setup-btn host-btn" style="width: 100%; margin-bottom: 10px;" id="btn-profile-add" onclick="sendFriendRequestFromProfile()">申请特工通讯</button>
@@ -129,7 +136,10 @@
 
   <div id="friends-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
     <div class="modal-content" style="max-width: 450px; width: 95%;" onclick="event.stopPropagation()">
-      <h2 style="color: var(--blue); margin-top: 0; text-align: center;">👥 特工通讯网</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h2 style="color: var(--blue); margin: 0;">👥 特工通讯网</h2>
+        <button class="setup-btn" style="padding: 5px 10px; font-size:0.85em; background: transparent; border: 1px solid var(--blue); color: var(--blue);" onclick="renderFriendsList()">🔄 刷新状态</button>
+      </div>
       
       <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
         <p style="margin: 0 0 10px 0; font-size: 0.9em; color: #c9d1d9;">添加新特工 (输入6位UID)</p>
@@ -151,12 +161,20 @@
     </div>
   </div>
 
+  <!-- 排行榜 (增加分类页签) -->
   <div id="leaderboard-modal" style="display: none;" class="fixed-overlay" onclick="this.style.display='none'">
-    <div class="modal-content" style="max-width: 400px; width: 90%;" onclick="event.stopPropagation()">
-      <h2 style="color: var(--purple); margin-top: 0; text-align: center;">🏆 胜率榜单</h2>
-      <p style="text-align: center; color: #8b949e; font-size: 0.8em; margin-bottom: 15px;">(仅统计多人联机模式胜率，按胜率排序)</p>
+    <div class="modal-content" style="max-width: 500px; width: 95%;" onclick="event.stopPropagation()">
+      <h2 style="color: var(--purple); margin-top: 0; text-align: center;">🏆 阵营荣耀榜单</h2>
       
-      <div id="leaderboard-list" style="max-height: 350px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px;">
+      <div class="tab-header">
+         <button class="tab-btn active angel" onclick="switchLeaderboardTab('angel')">👼 天使榜</button>
+         <button class="tab-btn demon" onclick="switchLeaderboardTab('demon')">😈 恶魔榜</button>
+         <button class="tab-btn heretic" onclick="switchLeaderboardTab('heretic')">👺 异教徒榜</button>
+      </div>
+
+      <p style="text-align: center; color: #8b949e; font-size: 0.75em; margin-bottom: 15px;">2人局第1、3人局第1、4人局前2视为一次阵营胜场。榜单随阵营切换。</p>
+      
+      <div id="leaderboard-list" style="max-height: 350px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; text-align: left;">
         <div style="text-align: center; color: #8b949e;">正在拉取机密数据...</div>
       </div>
       
@@ -297,7 +315,6 @@
               <label style="cursor:pointer;"><input type="radio" name="cons-inc" value="ammo" style="accent-color:var(--green);"> 弹药</label>
            </div>
         </div>
-
         <button class="setup-btn host-btn" style="width:100%; padding:15px; font-size:1.1em; margin-top: 10px;" onclick="confirmConservation()">确认交换并装备</button>
         <button class="back-link" onclick="document.getElementById('conservation-modal').style.display='none'; document.getElementById('pocket-modal').style.display='flex';">← 取消并返回口袋</button>
       </div>
@@ -375,6 +392,7 @@
       </div>
     </div>
 
+    <!-- 战报日志区 -->
     <div id="battle-log-area"><div id="battle-log-inner">准备就绪，请出招！</div></div>
 
     <div id="rematch-panel" style="display:none; text-align:center; padding: 25px; background: rgba(88,166,255,0.08); border: 1px solid var(--blue); border-radius: 12px; margin-bottom: 20px;">
@@ -383,6 +401,7 @@
       <button id="btn-rematch-action" class="setup-btn host-btn" style="padding: 12px 25px; font-size: 1.1em;"></button>
     </div>
 
+    <!-- 动作面板区域 -->
     <div class="action-panel" id="action-panel-container">
 
       <div id="silenced-panel" style="display: none; text-align: center; padding: 30px; background: rgba(163,113,247,0.15); border-radius: 12px; border: 1px solid rgba(163,113,247,0.4); margin-bottom: 15px;">
@@ -437,6 +456,16 @@
           </div>
         </div>
       </div>
+
+      <!-- 局内房间聊天 -->
+      <div id="room-chat-panel">
+         <div id="room-chat-list"></div>
+         <div id="room-chat-input-area">
+             <input type="text" id="room-chat-input" placeholder="按回车或点击发送..." maxlength="40">
+             <button id="room-chat-send" onclick="sendRoomChat()">发送</button>
+         </div>
+      </div>
+
     </div>
   </div>
 
