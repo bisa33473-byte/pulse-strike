@@ -16,7 +16,7 @@ let isRerollingGlobal = false;
 let selectedPocketIndex = -1;
 
 // ==================== 用户认证与缓存 ====================
-let currentUser = { uid: "", username: "", title: "初阶特工", stats: { total: 0, wins: 0 }, friends: {} };
+let currentUser = { uid: "", username: "", title: "初阶特工", avatar: "", stats: { total: 0, wins: 0 }, friends: {} };
 
 window.onload = function() {
   const cachedUid = localStorage.getItem('pulse_uid');
@@ -27,6 +27,7 @@ window.onload = function() {
         if (!currentUser.stats) currentUser.stats = { total: 0, wins: 0 };
         if (!currentUser.friends) currentUser.friends = {};
         if (!currentUser.title) currentUser.title = "初阶特工";
+        if (!currentUser.avatar) currentUser.avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
         setupPresence(); showHub();
       } else { localStorage.removeItem('pulse_uid'); }
     });
@@ -37,11 +38,21 @@ function setupPresence() {
   const connectedRef = db.ref(".info/connected");
   connectedRef.on("value", function(snap) {
     if (snap.val() === true && currentUser.uid) {
-      const userOnlineRef = db.ref('users/' + currentUser.uid + '/online');
-      userOnlineRef.set(true); userOnlineRef.onDisconnect().set(false);
+      db.ref('users/' + currentUser.uid + '/online').set(true);
+      db.ref('users/' + currentUser.uid + '/online').onDisconnect().set(false);
+      db.ref('users/' + currentUser.uid + '/roomStatus').onDisconnect().set('idle');
+      updateMyPresence('idle', '', 0);
     }
   });
   listenToInvites();
+  listenToJoinRequests();
+}
+
+function updateMyPresence(status, roomId, round) {
+   if (!currentUser.uid) return;
+   db.ref('users/' + currentUser.uid + '/roomStatus').set(status);
+   db.ref('users/' + currentUser.uid + '/currentRoomId').set(roomId);
+   db.ref('users/' + currentUser.uid + '/roomRound').set(round || 0);
 }
 
 function handleRegister() {
@@ -54,9 +65,10 @@ function handleRegister() {
     if (snap.exists()) { msg.innerText = "该代号已被注册！"; } 
     else {
       const newUid = Math.floor(100000 + Math.random() * 900000).toString();
-      const newUserObj = { uid: newUid, username: user, password: pass, title: "初阶特工", stats: { total: 0, wins: 0 }, online: true };
+      const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
+      const newUserObj = { uid: newUid, username: user, password: pass, title: "初阶特工", avatar: defaultAvatar, stats: { total: 0, wins: 0 }, online: true, roomStatus: 'idle' };
       db.ref('users/' + newUid).set(newUserObj).then(function() {
-        currentUser = newUserObj; currentUser.friends = {}; localStorage.setItem('pulse_uid', newUid);
+        currentUser = newUserObj; localStorage.setItem('pulse_uid', newUid);
         setupPresence(); showHub();
       });
     }
@@ -79,6 +91,7 @@ function handleLogin() {
         if (!currentUser.stats) currentUser.stats = { total: 0, wins: 0 };
         if (!currentUser.friends) currentUser.friends = {};
         if (!currentUser.title) currentUser.title = "初阶特工";
+        if (!currentUser.avatar) currentUser.avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
         localStorage.setItem('pulse_uid', currentUser.uid); found = true;
       }
     });
@@ -87,19 +100,58 @@ function handleLogin() {
 }
 
 function handleLogout() {
-  if (currentUser.uid) db.ref('users/' + currentUser.uid + '/online').set(false);
+  if (currentUser.uid) {
+      db.ref('users/' + currentUser.uid + '/online').set(false);
+      updateMyPresence('idle', '', 0);
+  }
   localStorage.removeItem('pulse_uid'); location.reload();
+}
+
+// ==================== 头像上传 (前端 Canvas 压缩防爆内存) ====================
+function handleAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) return alert("图片过大，请选择 5MB 以内的图片！");
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const MAX_SIZE = 128; // 压缩至128x128，极大节省 RTDB 内存
+            let width = img.width; let height = img.height;
+
+            if (width > height) { if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; } } 
+            else { if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; } }
+
+            canvas.width = width; canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+            db.ref('users/' + currentUser.uid + '/avatar').set(dataUrl).then(() => {
+                currentUser.avatar = dataUrl;
+                document.getElementById('hub-avatar').src = dataUrl;
+                alert("头像同步至终端成功！");
+            });
+        }
+        img.src = e.target.result;
+    }
+    reader.readAsDataURL(file);
 }
 
 // ==================== 主城 (Hub) ====================
 function showHub() {
   document.getElementById('auth-overlay').style.display = 'none';
   document.getElementById('mode-overlay').style.display = 'none';
+  document.getElementById('chat-modal').style.display = 'none';
   document.getElementById('hub-overlay').style.display = 'flex';
   document.getElementById('hub-title').innerText = `[${currentUser.title}]`;
   document.getElementById('hub-username').innerText = currentUser.username;
   document.getElementById('hub-uid').innerText = currentUser.uid;
+  document.getElementById('hub-avatar').src = currentUser.avatar;
   listenToFriendRequests();
+  updateMyPresence('idle', '', 0);
 }
 
 function updateCustomTitle() {
@@ -122,15 +174,6 @@ function openGameSelect() {
 function goBackToHub() { 
   document.getElementById('mode-overlay').style.display = 'none'; 
   document.getElementById('hub-overlay').style.display = 'flex'; 
-  document.getElementById('step-version').style.display = 'block';
-  document.getElementById('step-mode').style.display = 'none';
-  if(document.getElementById('step-pve')) document.getElementById('step-pve').style.display = 'none';
-}
-
-function goBackToVersion() { 
-  document.getElementById('step-version').style.display = 'block'; 
-  document.getElementById('step-mode').style.display = 'none'; 
-  if(document.getElementById('step-pve')) document.getElementById('step-pve').style.display = 'none';
 }
 
 function showPveOptions() {
@@ -143,7 +186,116 @@ function hidePveOptions() {
   document.getElementById('step-mode').style.display = 'block';
 }
 
-// ==================== 社交与通讯 ====================
+// ==================== 世界聊天系统 (终端广播) ====================
+function openGlobalChat() {
+    document.getElementById('hub-overlay').style.display = 'none';
+    document.getElementById('chat-modal').style.display = 'flex';
+    listenToGlobalChat();
+}
+
+function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if(!text) return;
+    if(text.length > 30) return alert("内存警告：单条广播不能超过 30 字符！");
+
+    const chatRef = db.ref('global_chat');
+    chatRef.once('value', snap => {
+        const data = snap.val() || {};
+        const keys = Object.keys(data);
+        const now = Date.now();
+        const oneWeek = 7 * 24 * 60 * 60 * 1000;
+
+        let shouldWipe = false;
+        if (keys.length >= 100) shouldWipe = true;
+        else if (keys.length > 0) {
+            const oldest = data[keys[0]].timestamp;
+            if (now - oldest > oneWeek) shouldWipe = true;
+        }
+
+        const msgObj = {
+            uid: currentUser.uid, username: currentUser.username, title: currentUser.title || '特工',
+            avatar: currentUser.avatar || '', text: text, timestamp: now
+        };
+
+        if (shouldWipe) { chatRef.set(null).then(() => chatRef.push(msgObj)); } 
+        else { chatRef.push(msgObj); }
+        input.value = "";
+    });
+}
+
+function listenToGlobalChat() {
+    db.ref('global_chat').on('value', snap => {
+        const list = document.getElementById('chat-list');
+        list.innerHTML = "";
+        const data = snap.val();
+        if (!data) return;
+
+        db.ref('users').once('value', uSnap => {
+            const allUsers = uSnap.val() || {};
+            const myFriends = Object.keys(currentUser.friends || {});
+
+            let messages = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
+
+            messages.forEach(msg => {
+                let isPossibleFriend = false;
+                if (msg.uid !== currentUser.uid && !myFriends.includes(msg.uid)) {
+                    const theirFriends = Object.keys((allUsers[msg.uid] && allUsers[msg.uid].friends) || {});
+                    const intersection = myFriends.filter(value => theirFriends.includes(value));
+                    if (intersection.length > 0) isPossibleFriend = true;
+                }
+
+                const div = document.createElement('div');
+                div.className = 'chat-msg';
+                let avatarSrc = msg.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
+                let badge = isPossibleFriend ? `<span class="possible-friend-badge">你的可能好友</span>` : "";
+
+                div.innerHTML = `
+                    <img src="${avatarSrc}" class="chat-avatar" onclick="showProfile('${msg.uid}')">
+                    <div class="chat-content">
+                        <div class="chat-header">
+                            <span class="chat-title">[${msg.title}]</span>
+                            <span class="chat-name" onclick="showProfile('${msg.uid}')">${msg.username}</span>
+                            ${badge}
+                        </div>
+                        <div class="chat-text">${msg.text}</div>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+            list.scrollTop = list.scrollHeight;
+        });
+    });
+}
+
+function showProfile(uid) {
+    db.ref('users/' + uid).once('value', snap => {
+        const u = snap.val(); if(!u) return;
+        document.getElementById('profile-avatar').src = u.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
+        document.getElementById('profile-name').innerText = u.username;
+        document.getElementById('profile-title').innerText = `[${u.title || '特工'}]`;
+        document.getElementById('profile-uid').innerText = u.uid;
+
+        let rate = 0; if (u.stats && u.stats.total > 0) rate = ((u.stats.wins / u.stats.total) * 100).toFixed(1);
+        let wins = u.stats ? u.stats.wins : 0; let total = u.stats ? u.stats.total : 0;
+        document.getElementById('profile-rate').innerText = `${rate}% 胜率`;
+        document.getElementById('profile-stats').innerText = `${wins}胜 / ${total}局`;
+
+        const btn = document.getElementById('btn-profile-add');
+        if (uid === currentUser.uid || (currentUser.friends && currentUser.friends[uid])) { btn.style.display = 'none'; } 
+        else { btn.style.display = 'block'; btn.onclick = () => { sendFriendRequestExplicit(uid, u.username); }; }
+
+        document.getElementById('profile-modal').style.display = 'flex';
+    });
+}
+
+function sendFriendRequestExplicit(targetUid, targetName) {
+    db.ref('friend_requests/' + targetUid + '/' + currentUser.uid).set(currentUser.username).then(() => {
+        alert("申请已发送给 " + targetName + "！"); document.getElementById('profile-modal').style.display = 'none';
+    });
+}
+
+// ==================== 社交与好友状态追踪 ====================
 function openFriendsModal() { document.getElementById('friends-modal').style.display = 'flex'; renderFriendsList(); }
 
 function sendFriendRequest() {
@@ -198,15 +350,30 @@ function renderFriendsList() {
     const fKeys = Object.keys(currentUser.friends);
     for (let i = 0; i < fKeys.length; i++) {
       let fUid = fKeys[i]; let fName = currentUser.friends[fUid];
-      let isOnline = allUsers[fUid] && allUsers[fUid].online === true;
-      let statusDot = isOnline ? "<span style='color:var(--green);'>🟢 在线</span>" : "<span style='color:#8b949e;'>⚪ 离线</span>";
-      let inviteBtn = "";
-      if (isOnline && gameState && gameState.status === 'waiting' && myRole !== 'spectator' && currentRoomId !== "") {
-         inviteBtn = `<button class="setup-btn host-btn" style="padding:4px 8px; font-size:0.7em; margin-left:10px;" onclick="sendRoomInvite('${fUid}')">邀请</button>`;
+      let fUser = allUsers[fUid];
+      let isOnline = fUser && fUser.online === true;
+
+      let statusDot = "<span style='color:#8b949e;'>⚪ 离线</span>";
+      let actionBtn = "";
+
+      if (isOnline) {
+          if (fUser.roomStatus === 'playing') {
+              statusDot = `<span style='color:var(--red);'>🔴 激战中 (第${fUser.roomRound || 1}回合)</span>`;
+              actionBtn = `<button class="setup-btn host-btn" style="padding:4px 8px; font-size:0.7em;" onclick="spectateRoom('${fUser.currentRoomId}')">隐匿观战</button>`;
+          } else if (fUser.roomStatus === 'waiting') {
+              statusDot = `<span style='color:var(--gold);'>🟡 房间 ${fUser.currentRoomId} 中</span>`;
+              actionBtn = `<button class="setup-btn join-btn" style="padding:4px 8px; font-size:0.7em;" onclick="requestJoinRoom('${fUser.currentRoomId}', '${fUid}')">申请跃迁</button>`;
+          } else {
+              statusDot = `<span style='color:var(--green);'>🟢 大厅闲置</span>`;
+              if (gameState && gameState.status === 'waiting' && myRole !== 'spectator' && currentRoomId !== "") {
+                  actionBtn = `<button class="setup-btn host-btn" style="padding:4px 8px; font-size:0.7em;" onclick="sendRoomInvite('${fUid}')">邀请</button>`;
+              }
+          }
       }
+
       const item = document.createElement('div');
       item.style.cssText = "background:#21262d; padding:10px; margin-bottom:8px; border-radius:6px; font-size:0.9em; display:flex; justify-content:space-between; align-items:center;";
-      item.innerHTML = `<div><span style="display:inline-block; min-width:60px;">${statusDot}</span><b style="color:var(--blue); margin-left:5px;">${fName}</b></div><div style="display:flex; align-items:center;"><span style="color:#8b949e; font-family:monospace;">UID:${fUid}</span>${inviteBtn}</div>`;
+      item.innerHTML = `<div><span style="display:inline-block; min-width:120px;">${statusDot}</span><b style="color:var(--blue); margin-left:5px;">${fName}</b></div><div style="display:flex; align-items:center;"><span style="color:#8b949e; font-family:monospace; margin-right:8px;">UID:${fUid}</span>${actionBtn}</div>`;
       fList.appendChild(item);
     }
   });
@@ -239,6 +406,46 @@ function acceptInvite() {
 }
 function declineInvite() { document.getElementById('global-invite-alert').style.display = 'none'; db.ref('invites/' + currentUser.uid).remove(); }
 
+// 申请加入好友房间
+function requestJoinRoom(rid, fUid) {
+    db.ref('join_requests/' + rid + '/' + currentUser.uid).set({ username: currentUser.username, timestamp: Date.now() }).then(() => {
+        alert("已向该房间发送跃迁申请，等待房主审核...");
+    });
+}
+// 房主监听申请
+function listenToJoinRequests() {
+    if(!currentRoomId || myRole !== 'p1') return;
+    db.ref('join_requests/' + currentRoomId).on('value', snap => {
+        const data = snap.val(); if(!data) return;
+        Object.keys(data).forEach(reqUid => {
+            let req = data[reqUid];
+            if (Date.now() - req.timestamp > 60000) { db.ref('join_requests/' + currentRoomId + '/' + reqUid).remove(); return; }
+            if (confirm(`⚠️ 特工 [${req.username}] 申请跃迁加入你的房间，是否同意？`)) {
+                db.ref('join_requests/' + currentRoomId + '/' + reqUid).remove();
+                sendRoomInvite(reqUid); // 同意即直接反向发送正式邀请
+            } else {
+                db.ref('join_requests/' + currentRoomId + '/' + reqUid).remove();
+            }
+        });
+    });
+}
+
+// 隐匿观战
+function spectateRoom(rid) {
+    document.getElementById('friends-modal').style.display = 'none';
+    document.getElementById('hub-overlay').style.display = 'none';
+    document.getElementById('game-container').style.display = 'block';
+    myRole = 'spectator';
+    currentRoomId = rid;
+    roomRef = db.ref("rooms_v2/" + rid); // 假设默认正式服，若无再搜beta
+    roomRef.once('value', snap => {
+        if (!snap.exists()) {
+             roomRef = db.ref("rooms_beta/" + rid);
+        }
+        setupRoomListener(rid);
+    });
+}
+
 // ==================== 排行榜 ====================
 function openLeaderboardModal() {
   document.getElementById('leaderboard-modal').style.display = 'flex';
@@ -250,7 +457,7 @@ function openLeaderboardModal() {
       let uData = data[uKeys[i]];
       if (uData.stats && uData.stats.total > 0) {
         let rate = (uData.stats.wins / uData.stats.total) * 100;
-        players.push({ name: uData.username, title: uData.title || "特工", total: uData.stats.total, wins: uData.stats.wins, rate: rate });
+        players.push({ uid: uData.uid, avatar: uData.avatar, name: uData.username, title: uData.title || "特工", total: uData.stats.total, wins: uData.stats.wins, rate: rate });
       }
     }
     players.sort(function(a, b) { if (b.rate !== a.rate) return b.rate - a.rate; return b.total - a.total; });
@@ -258,9 +465,10 @@ function openLeaderboardModal() {
     if (players.length === 0) { list.innerHTML = "<div style='text-align: center; color: #8b949e;'>暂无数据</div>"; return; }
     for (let i = 0; i < players.length; i++) {
       let p = players[i]; let rankColor = "#c9d1d9"; if (i === 0) rankColor = "#d29922"; if (i === 1) rankColor = "#c0c0c0"; if (i === 2) rankColor = "#cd7f32";
+      let avSrc = p.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
       const item = document.createElement('div');
       item.style.cssText = `background:rgba(0,0,0,0.5); padding:12px; margin-bottom:8px; border-radius:8px; border-left:4px solid ${rankColor}; display:flex; justify-content:space-between; align-items:center;`;
-      item.innerHTML = `<div style="flex:1;"><span style="font-weight:bold; font-size:1.1em; color:${rankColor}; margin-right:10px;">#${i+1}</span><span style="font-size:0.75em; color:var(--gold);">[${p.title}]</span><span style="font-weight:bold; margin-left:5px; color:#fff;">${p.name}</span></div><div style="text-align:right;"><div style="color:var(--green); font-weight:bold; font-size:1.1em;">${p.rate.toFixed(1)}%</div><div style="color:#8b949e; font-size:0.7em;">${p.wins}胜 / ${p.total}局</div></div>`;
+      item.innerHTML = `<div style="display:flex; align-items:center; flex:1;"><span style="font-weight:bold; font-size:1.1em; color:${rankColor}; margin-right:10px; width:25px;">#${i+1}</span><img src="${avSrc}" style="width:30px; height:30px; border-radius:50%; border:1px solid var(--border); margin-right:10px; object-fit:cover;"><div style="display:flex; flex-direction:column; line-height:1.2;"><span style="font-size:0.75em; color:var(--gold);">[${p.title}]</span><span style="font-weight:bold; color:#fff;">${p.name}</span></div></div><div style="text-align:right;"><div style="color:var(--green); font-weight:bold; font-size:1.1em;">${p.rate.toFixed(1)}%</div><div style="color:#8b949e; font-size:0.7em;">${p.wins}胜 / ${p.total}局</div></div>`;
       list.appendChild(item);
     }
   });
@@ -290,14 +498,7 @@ function getTalentCdKey(id) {
 }
 
 function isMoveFromTalent(move, talentId) {
-    const map = {
-        'm_a2': 'holy_light',
-        'm_a4': 'dual_heal',
-        'm_d4': 'fatal_shoot',
-        'm_h2': 'heretic_seal',
-        'm_h4': 'symbiosis',
-        'm_a6': 'stealth_action'
-    };
+    const map = { 'm_a2': 'holy_light', 'm_a4': 'dual_heal', 'm_d4': 'fatal_shoot', 'm_h2': 'heretic_seal', 'm_h4': 'symbiosis', 'm_a6': 'stealth_action' };
     return map[talentId] === move;
 }
 
@@ -325,7 +526,7 @@ function getInitialState(capacity) {
 }
 
 function createBasePlayer(currentHp, maxHp, maxAmmo, maxShield) {
-  return { uid: "", username: "", title: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", 
+  return { uid: "", username: "", title: "", avatar: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", 
     talent: null, extraTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, stealthCd: 0, 
     sealCharges: 1, sealDmgTimer: 0, rerolled: false, 
     reviveCount: 0, reviveCharges: 0, a5Recoveries: [], actionCount: 0, silenced: 0, h3State: '勿视', h3Timer: 0, roundDmg: 0,
@@ -361,37 +562,6 @@ const TALENT_POOL = {
 };
 
 // ==================== 建立与加入 ====================
-function selectVersion(v) { 
-  gameVersion = v; 
-  document.getElementById('step-version').style.display = 'none'; 
-  document.getElementById('step-mode').style.display = 'block'; 
-  if(document.getElementById('step-pve')) document.getElementById('step-pve').style.display = 'none';
-}
-function toggleRules(show) { document.getElementById('rules-modal').style.display = show ? 'flex' : 'none'; }
-function showTalentCodex() {
-  const container = document.getElementById('codex-list-container'); container.innerHTML = "";
-  let htmlStr = `<h3 style="color: var(--green); border-bottom: 1px solid #30363d; padding-bottom: 5px;">👼 天使机缘</h3>`;
-  for (let i = 0; i < TALENT_POOL.numerical.length; i++) { if (TALENT_POOL.numerical[i].type === 'angel') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.numerical[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(数值)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.numerical[i].desc}</span></div>`; }
-  for (let i = 0; i < TALENT_POOL.mechanism.length; i++) { if (TALENT_POOL.mechanism[i].type === 'angel') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.mechanism[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(机制)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.mechanism[i].desc}</span></div>`; }
-  htmlStr += `<h3 style="color: var(--purple); border-bottom: 1px solid #30363d; padding-bottom: 5px; margin-top: 25px;">😈 恶魔机缘</h3>`;
-  for (let i = 0; i < TALENT_POOL.numerical.length; i++) { if (TALENT_POOL.numerical[i].type === 'demon') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.numerical[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(数值)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.numerical[i].desc}</span></div>`; }
-  for (let i = 0; i < TALENT_POOL.mechanism.length; i++) { if (TALENT_POOL.mechanism[i].type === 'demon') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.mechanism[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(机制)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.mechanism[i].desc}</span></div>`; }
-  htmlStr += `<h3 style="color: var(--red); border-bottom: 1px solid #30363d; padding-bottom: 5px; margin-top: 25px;">👺 异教徒机缘</h3>`;
-  for (let i = 0; i < TALENT_POOL.mechanism.length; i++) { if (TALENT_POOL.mechanism[i].type === 'heretic') htmlStr += `<div style="margin-bottom: 12px;"><strong style="color:#fff;">${TALENT_POOL.mechanism[i].name}</strong> <span style="font-size:0.8em; color:#8b949e;">(机制)</span><br><span style="font-size:0.9em; color:#c9d1d9; white-space:pre-wrap;">${TALENT_POOL.mechanism[i].desc}</span></div>`; }
-  container.innerHTML = htmlStr; document.getElementById('codex-modal').style.display = 'flex';
-}
-function exitGame() { 
-  if (roomRef && myRole) {
-    let msg = myRole === 'p1' ? "你是房主，离开将解散房间。" : (myRole === 'spectator' ? "确定退出观战？" : "确定退出房间？");
-    if (confirm(msg)) {
-      if (myRole === 'p1') roomRef.remove().then(function(){location.reload();}); 
-      else if (myRole === 'spectator') location.reload();
-      else roomRef.child(myRole).update({ joined: false, ready: false }).then(function(){location.reload();}); 
-    }
-  } else location.reload(); 
-}
-
-// 核心更新：允许单机演练支持多位 AI
 function selectMode(mode, cap = 2) {
   isPvE = (mode === 'pve');
   document.getElementById('mode-overlay').style.display = 'none';
@@ -399,7 +569,7 @@ function selectMode(mode, cap = 2) {
   if (isPvE) {
     document.getElementById('room-setup').style.display = 'none'; myRole = 'p1';
     gameState = getInitialState(cap);
-    gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title;
+    gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title; gameState.p1.avatar = currentUser.avatar;
 
     let aiNames = ["机甲卫士", "深渊投影", "虚空矩阵"];
     for (let i = 2; i <= cap; i++) {
@@ -426,8 +596,12 @@ function createRoom(capacity) {
   const dbPath = gameVersion === 'beta' ? "rooms_beta/" : "rooms_v2/";
   roomRef = db.ref(dbPath + rid);
   let newRoom = getInitialState(capacity);
-  newRoom.p1.joined = true; newRoom.p1.uid = currentUser.uid; newRoom.p1.username = currentUser.username; newRoom.p1.title = currentUser.title;
-  roomRef.set(newRoom); roomRef.onDisconnect().remove(); setupRoomListener(rid);
+  newRoom.p1.joined = true; newRoom.p1.uid = currentUser.uid; newRoom.p1.username = currentUser.username; newRoom.p1.title = currentUser.title; newRoom.p1.avatar = currentUser.avatar;
+  roomRef.set(newRoom); 
+  roomRef.onDisconnect().remove(); 
+  updateMyPresence('waiting', rid, 0);
+  setupRoomListener(rid);
+  listenToJoinRequests();
 }
 
 function joinRoomWithId(explicitId) {
@@ -446,27 +620,32 @@ function joinRoomWithId(explicitId) {
       else if (cap >= 3 && !data.p3.joined) { myRole = 'p3'; isAssigned = true; }
       else if (cap === 4 && !data.p4.joined) { myRole = 'p4'; isAssigned = true; }
     }
-    if (!isAssigned) { myRole = 'spectator'; alert("房间满，进入观战！"); }
+    if (!isAssigned) { myRole = 'spectator'; alert("房间满，进入隐匿观战模式！"); }
     currentRoomId = rid; roomRef = tempRef; document.getElementById('room-setup').style.display = 'none';
     if (myRole !== 'spectator') {
-      roomRef.child(myRole).update({ joined: true, ready: false, uid: currentUser.uid, username: currentUser.username, title: currentUser.title });
+      roomRef.child(myRole).update({ joined: true, ready: false, uid: currentUser.uid, username: currentUser.username, title: currentUser.title, avatar: currentUser.avatar });
       roomRef.child(myRole).onDisconnect().update({ joined: false, ready: false });
+      updateMyPresence(data.status === 'playing' ? 'playing' : 'waiting', rid, data.round || 0);
     }
     setupRoomListener(rid);
   });
 }
+
 function joinRoom() {
   const ridInput = document.getElementById('roomInput').value; if (!ridInput) return alert("请输入房间码！");
   joinRoomWithId(ridInput);
 }
+
 function setupRoomListener(rid) {
   roomRef.on('value', function(snap) {
     let data = snap.val(); if (!data) { alert("房间解散。"); location.reload(); return; }
     gameState = data;
+    if (myRole !== 'spectator' && data.status === 'playing') updateMyPresence('playing', currentRoomId, data.round);
     if (gameState.status === 'waiting') renderLobby(rid);
     else { document.getElementById('waiting-room').style.display = 'none'; document.getElementById('game-container').style.display = 'block'; render(gameState); checkRoundStart(); }
   });
 }
+
 function renderLobby(rid) {
   document.getElementById('game-container').style.display = 'none'; document.getElementById('waiting-room').style.display = 'block'; document.getElementById('lobby-rid').innerText = rid;
   document.getElementById('spectator-banner-lobby').style.display = myRole === 'spectator' ? 'block' : 'none';
@@ -489,7 +668,10 @@ function renderLobby(rid) {
     if (cap >= 2 && (!gameState.p2.joined || !gameState.p2.ready)) allReady = false;
     if (cap >= 3 && (!gameState.p3.joined || !gameState.p3.ready)) allReady = false;
     if (cap >= 4 && (!gameState.p4.joined || !gameState.p4.ready)) allReady = false;
-    if (allReady) roomRef.update({ status: 'playing', playAgain: { p1: false, p2: false, p3: false, p4: false } });
+    if (allReady) {
+        roomRef.update({ status: 'playing', playAgain: { p1: false, p2: false, p3: false, p4: false } });
+        updateMyPresence('playing', currentRoomId, 1);
+    }
   }
 }
 function updateLobbyPlayer(playerId, pData, isActive) {
@@ -505,6 +687,39 @@ function updateLobbyPlayer(playerId, pData, isActive) {
   if (!pData || !pData.joined) { statusEl.innerText = "等待加入..."; statusEl.style.color = "#8b949e"; if(cardEl) cardEl.style.borderColor = "#30363d"; } 
   else if (!pData.ready) { statusEl.innerText = gameVersion === 'beta' ? "挑选机缘中..." : "未准备"; statusEl.style.color = "#d29922"; if(cardEl) cardEl.style.borderColor = "#d29922"; } 
   else { statusEl.innerText = "已准备就绪！"; statusEl.style.color = "#3fb950"; if(cardEl) cardEl.style.borderColor = "#3fb950"; }
+}
+
+// ==================== 退出与认输机制 ====================
+function exitGame() { 
+  if (roomRef && myRole) {
+    if (myRole === 'spectator') { location.reload(); return; }
+    let msg = myRole === 'p1' && gameState.status === 'waiting' ? "你是房主，大厅阶段离开将解散房间。" : "确定退出战区？退出后你将被系统强行抹杀，且其余特工将继续游戏！";
+    if (confirm(msg)) {
+      if (myRole === 'p1' && gameState.status === 'waiting') roomRef.remove().then(function(){location.reload();}); 
+      else {
+         if (gameState.status === 'playing') {
+             // 局内强退，留尸体
+             roomRef.child(myRole).update({ joined: false, move: 'quit' }).then(function(){location.reload();});
+         } else {
+             roomRef.child(myRole).update({ joined: false, ready: false }).then(function(){location.reload();});
+         }
+      }
+    }
+  } else location.reload(); 
+}
+
+function handleSurrender() {
+   if (!gameState || !myRole || myRole === 'spectator' || !gameState[myRole]) return;
+   if (gameState.status !== 'playing') return; // Prevent surrendering when game is over
+   if (gameState[myRole].hp <= 0) return;
+   if (confirm("是否确认荣誉殉国 (认输)？你的机缘将被他人搜刮！")) {
+       if (isPvE) {
+           gameState.p1.move = 'surrender';
+           processRound();
+       } else {
+           roomRef.child(myRole).update({ move: 'surrender' });
+       }
+   }
 }
 
 // ==================== 祈祷与机缘系统 ====================
@@ -527,7 +742,7 @@ function triggerPrayerPhase(isReroll) {
       icon = '🎲'; label = '无神论者'; color = '#6e7681'; boostName = '纯随机分配';
     } else {
       icon = bias === 'angel' ? '👼' : (bias === 'demon' ? '😈' : '👺');
-      label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆听深渊' : '追随禁忌');
+      label = bias === 'angel' ? '祈求圣光' : (bias === 'demon' ? '聆深渊' : '追随禁忌');
       color = bias === 'angel' ? 'var(--green)' : (bias === 'demon' ? 'var(--purple)' : 'var(--red)');
       let faction = bias === 'angel' ? '天使' : (bias === 'demon' ? '恶魔' : '异教徒');
       boostName = `${faction}机缘 +50%`;
@@ -604,7 +819,6 @@ function removeTalentMods(playerData, t, config) {
     playerData.maxHp = config.baseHp; playerData.maxAmmo = config.maxAmmo; playerData.maxShield = config.maxShield;
     if (gameState && gameState.round >= 120) { playerData.maxShield -= 2; if (playerData.maxShield < 0) playerData.maxShield = 0; playerData.maxHp -= 2; if (playerData.maxHp < 1) playerData.maxHp = 1; }
   }
-  // m_h1 stats are permanent base changes, no need to revert on remove unless losing the talent
   if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
   if (playerData.ammo > playerData.maxAmmo) playerData.ammo = playerData.maxAmmo;
   if (playerData.shield > playerData.maxShield) playerData.shield = playerData.maxShield;
@@ -1015,7 +1229,7 @@ function getSmartAiMove(aiKey, enemiesArray) {
 // 核心更新：全局引入 roundDmg 变量以支撑共生机制
 function processRound() {
   let data = gameState; let logs = [];
-  const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', symbiosis:'共生', stealth_action:'缄默', skip:'禁锢(跳过)' };
+  const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', symbiosis:'共生', stealth_action:'缄默', skip:'禁锢(跳过)', surrender:'认输', quit:'强退' };
   const cap = data.config.capacity; const allKeys = ['p1', 'p2', 'p3', 'p4'];
 
   for (let i = 0; i < allKeys.length; i++) { 
@@ -1037,10 +1251,20 @@ function processRound() {
   }
   const actionHeader = `【${actionStrs.join(' | ')}】`;
 
-  // 1. 预处理：记录圣光霸体与缄默防卫限制
+  // 1. 预处理：记录圣光霸体与缄默防卫限制，处理认输与强退
   let isInvincible = {};
   for(let i=0; i<alive.length; i++) {
       let p = alive[i]; let player = data[p];
+      if (player.move === 'surrender') {
+          let dmg = player.hp; player.hp = 0; player.roundDmg += dmg; player.lastAttacker = 'self'; player.tookDamage = true;
+          logs.push(`💀 ${player.username || p.toUpperCase()} 选择了荣誉殉国 (认输)！`);
+          continue;
+      }
+      if (player.move === 'quit') {
+          let dmg = player.hp; player.hp = 0; player.roundDmg += dmg; player.lastAttacker = 'system'; player.tookDamage = true;
+          logs.push(`⚠️ ${player.username || p.toUpperCase()} 失去连接，系统将其强行抹杀！`);
+          continue;
+      }
       if (player.move === 'holy_light' && hasTalent(player, 'm_a2')) {
           isInvincible[p] = true;
           logs.push(`<span class="log-safe">👼 ${player.username || p.toUpperCase()} 沐浴在圣光之中，本回合进入霸体状态！</span>`);
@@ -1053,6 +1277,7 @@ function processRound() {
   // 2. 异教徒状态切换
   for (let i = 0; i < alive.length; i++) {
     const p = alive[i]; let player = data[p];
+    if (player.hp <= 0) continue;
     if (hasTalent(player, 'm_h3')) {
       player.h3Timer -= 1;
       if (player.h3Timer <= 0) {
@@ -1070,7 +1295,7 @@ function processRound() {
 
   // 3. 自我资源与特殊状态结算
   for (let i = 0; i < alive.length; i++) {
-    const p = alive[i]; let player = data[p]; if (player.move === "" || player.move === "skip") continue;
+    const p = alive[i]; let player = data[p]; if (player.hp <= 0 || player.move === "" || player.move === "skip" || player.move === "surrender" || player.move === "quit") continue;
     if (player.move === 'reload') {
       let gain = 1;
       if (hasTalent(player, 'm_d2')) {
@@ -1095,7 +1320,7 @@ function processRound() {
       if (Math.random() < 0.5) {
         player.hp = Math.min(player.hp + 1, player.maxHp); logs.push(`<span class="log-safe">✨ ${p.toUpperCase()} 渡灵法阵眷顾，恢复自身 1 点生命！</span>`);
       } else {
-        let enemies = []; for (let k = 0; k < alive.length; k++) { if (alive[k] !== p && data[alive[k]].stealthTimer <= 0) enemies.push(alive[k]); }
+        let enemies = []; for (let k = 0; k < alive.length; k++) { if (alive[k] !== p && data[alive[k]].stealthTimer <= 0 && data[alive[k]].hp > 0) enemies.push(alive[k]); }
         if (enemies.length > 0) {
           let randEnemyKey = enemies[Math.floor(Math.random() * enemies.length)];
           data[randEnemyKey].hp = Math.min(data[randEnemyKey].hp + 1, data[randEnemyKey].maxHp);
@@ -1132,7 +1357,7 @@ function processRound() {
   // 4. 攻击判定与 LastAttacker 记录 (全面嵌入 roundDmg 收集与免伤机制)
   for (let i = 0; i < alive.length; i++) {
     const attKey = alive[i]; let att = data[attKey];
-    if (!att || (att.move !== 'shoot' && att.move !== 'ground_spike' && att.move !== 'holy_light' && att.move !== 'fatal_shoot')) continue;
+    if (!att || att.hp <= 0 || (att.move !== 'shoot' && att.move !== 'ground_spike' && att.move !== 'holy_light' && att.move !== 'fatal_shoot')) continue;
     let defKey = att.target; let def = data[defKey];
     let attN = attKey.replace('p', '').toUpperCase(); let defN = defKey ? defKey.replace('p', '').toUpperCase() : '空气';
     let actualDmg = 0;
@@ -1256,6 +1481,7 @@ function processRound() {
   // 5. 共生伤害传递与反噬核算 (生死结算前触发)
   for (let i = 0; i < alive.length; i++) {
      let p = alive[i]; let player = data[p];
+     if (player.hp <= 0) continue;
      if (player.move === 'symbiosis' && player.target) {
         let t = player.target; let targetPlayer = data[t];
         if (targetPlayer) {
@@ -1509,7 +1735,7 @@ function resetRoomForRematch(oldData) {
     const p = pKeys[i];
     if (oldData[p] && oldData[p].joined) {
       newData[p].joined = true; newData[p].ready = false; 
-      newData[p].uid = oldData[p].uid; newData[p].username = oldData[p].username; newData[p].title = oldData[p].title;
+      newData[p].uid = oldData[p].uid; newData[p].username = oldData[p].username; newData[p].title = oldData[p].title; newData[p].avatar = oldData[p].avatar;
 
       // 【深度清洗】：确保彻底断绝上一局状态残留与机缘数值污染
       newData[p].talent = null;
@@ -1651,9 +1877,12 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
 
   if (playerLabelEl && pData.username) {
     let tStr = pData.title ? `[${pData.title}] ` : ""; let baseName = `${tStr}${pData.username}`;
+    let avatarSrc = pData.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
+    let existingAvatar = document.getElementById(`${pKey}-avatar`);
+    if (existingAvatar) existingAvatar.src = avatarSrc;
+
     let existingNameSpan = document.getElementById(`${pKey}-name-display`);
     if (existingNameSpan) existingNameSpan.innerText = baseName;
-    else playerLabelEl.innerHTML = `<span id="${pKey}-name-display">${baseName}</span> <span id="${pKey}-turn-status" class="turn-status"></span> <span id="${pKey}-conn" class="conn-status">(离线)</span>`;
   }
 
   const newConnEl = document.getElementById(`${pKey}-conn`); const newTurnStatusEl = document.getElementById(`${pKey}-turn-status`);
@@ -1921,4 +2150,56 @@ function updateActionPanel(data) {
     const lootPanel = document.getElementById('loot-panel'); if(lootPanel) lootPanel.style.display='none';
     const silencedPanel = document.getElementById('silenced-panel'); if(silencedPanel) silencedPanel.style.display='none';
   }
+}
+
+function selectVersion(version) {
+  gameVersion = version;
+  document.getElementById('step-version').style.display = 'none';
+  document.getElementById('step-mode').style.display = 'block';
+}
+
+function toggleRules(show) {
+  document.getElementById('rules-modal').style.display = show ? 'flex' : 'none';
+}
+
+function sendFriendRequestFromProfile() {
+  const targetUid = document.getElementById('profile-uid').innerText.trim();
+  if (!targetUid || targetUid === currentUser.uid) return;
+  db.ref('friend_requests/' + targetUid + '/' + currentUser.uid).set(currentUser.username).then(function() {
+    alert("好友申请已发送！");
+    document.getElementById('profile-modal').style.display = 'none';
+  });
+}
+
+function showTalentCodex() {
+  const container = document.getElementById('codex-list-container');
+  if (!container) return;
+  container.innerHTML = '';
+  const allTalents = (TALENT_POOL.numerical || []).concat(TALENT_POOL.mechanism || []);
+  const groups = { angel: [], demon: [], heretic: [] };
+  allTalents.forEach(function(t) { if (groups[t.type]) groups[t.type].push(t); });
+
+  const groupMeta = [
+    { key: 'angel',   label: '👼 天使阵营',   color: '#3fb950' },
+    { key: 'demon',   label: '😈 恶魔阵营',   color: '#a371f7' },
+    { key: 'heretic', label: '👺 异教徒阵营', color: 'var(--red)' }
+  ];
+
+  groupMeta.forEach(function(g) {
+    if (!groups[g.key] || groups[g.key].length === 0) return;
+    const header = document.createElement('div');
+    header.style.cssText = 'color:' + g.color + '; font-weight:bold; font-size:1em; margin:15px 0 8px 0; border-bottom:1px solid ' + g.color + '; padding-bottom:5px;';
+    header.innerText = g.label;
+    container.appendChild(header);
+
+    groups[g.key].forEach(function(t) {
+      const item = document.createElement('div');
+      item.style.cssText = 'background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:8px; cursor:pointer;';
+      item.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-weight:bold; color:#c9d1d9;">' + t.name + '</span><span style="font-size:0.75em; background:' + g.color + '; color:#fff; padding:2px 8px; border-radius:12px;">' + t.category + '类</span></div>';
+      item.onclick = function() { showTalentDetail(t); };
+      container.appendChild(item);
+    });
+  });
+
+  document.getElementById('codex-modal').style.display = 'flex';
 }

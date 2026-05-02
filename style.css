@@ -32,7 +32,11 @@ body {
 #talent-overlay, 
 #talent-detail-modal, 
 #rules-modal, 
-#codex-modal { 
+#codex-modal,
+#chat-modal,
+#profile-modal,
+#pocket-modal,
+#conservation-modal { 
   position: fixed; 
   inset: 0; 
   background: rgba(13, 17, 23, 0.85); 
@@ -87,7 +91,7 @@ body {
 }
 .cyber-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 10px rgba(88,166,255,0.3); }
 
-/* ==================== 跨服邀请通知 ==================== */
+/* ==================== 跨服邀请与聊天 ==================== */
 #global-invite-alert {
   position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
   background: rgba(13, 17, 23, 0.95); border: 2px solid var(--gold); padding: 15px 25px;
@@ -99,11 +103,20 @@ body {
 .invite-btn.accept { background: var(--green); color: white; }
 .invite-btn.decline { background: #30363d; color: white; }
 
+.chat-msg { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; margin-bottom: 10px; display: flex; gap: 10px; align-items: flex-start; }
+.chat-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); cursor: pointer; flex-shrink: 0; }
+.chat-content { flex: 1; overflow: hidden; }
+.chat-header { font-size: 0.8em; color: #8b949e; margin-bottom: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.chat-title { color: var(--gold); }
+.chat-name { color: var(--blue); font-weight: bold; cursor: pointer; }
+.chat-text { font-size: 0.95em; color: #c9d1d9; word-break: break-word; }
+.possible-friend-badge { font-size: 0.7em; background: rgba(57, 197, 187, 0.2); color: var(--cyan); padding: 2px 6px; border-radius: 10px; border: 1px solid var(--cyan); }
+
 /* ==================== 战前大厅与文本排版 ==================== */
 #waiting-room { width: 100%; max-width: 800px; margin: 0 auto; background: var(--panel); border-radius: 16px; padding: 35px; box-shadow: 0 15px 40px rgba(0,0,0,0.6); border: 1px solid var(--border); text-align: center; }
 .highlight-rid { color: var(--gold); font-size: 1.5em; font-weight: bold; background: rgba(210, 153, 34, 0.1); padding: 2px 8px; border-radius: 6px; }
 .lobby-grid { display: flex; justify-content: center; flex-wrap: wrap; margin: 35px 0; gap: 15px; }
-.lobby-card { background: #0d1117; flex: 1; min-width: 20%; padding: 25px 10px; border-radius: 12px; border: 2px solid var(--border); transition: 0.3s; }
+.lobby-card { background: #0d1117; flex: 1; min-width: 20%; padding: 25px 10px; border-radius: 12px; border: 2px solid var(--border); transition: 0.3s; position: relative; }
 .role-badge { font-weight: bold; font-size: 1em; margin-bottom: 15px; color: var(--blue); letter-spacing: 1px; }
 .lobby-status { font-weight: bold; font-size: 0.95em; }
 
@@ -112,12 +125,8 @@ body {
 .close-modal { width: 100%; padding: 12px; background: var(--blue); border: none; color: white; border-radius: 10px; margin-top: 25px; cursor: pointer; font-weight: bold; transition: 0.2s; }
 .close-modal:hover { filter: brightness(1.2); }
 
-.rules-body::-webkit-scrollbar { width: 4px; }
-.rules-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
-#leaderboard-list::-webkit-scrollbar { width: 4px; }
-#leaderboard-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
-#friends-list::-webkit-scrollbar { width: 4px; }
-#friends-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+.rules-body::-webkit-scrollbar, #leaderboard-list::-webkit-scrollbar, #friends-list::-webkit-scrollbar, #chat-list::-webkit-scrollbar { width: 4px; }
+.rules-body::-webkit-scrollbar-thumb, #leaderboard-list::-webkit-scrollbar-thumb, #friends-list::-webkit-scrollbar-thumb, #chat-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
 
 /* ==================== 天赋选择系统 ==================== */
 .talent-title { font-size: 2.2em; color: var(--gold); margin: 0 0 10px 0; text-shadow: 0 0 15px rgba(210, 153, 34, 0.5); }
@@ -155,9 +164,11 @@ body {
 .player-card { 
   background: #0d1117; padding: 18px; border-radius: 12px; flex: 1; min-width: 22%;
   border: 1px solid var(--border); border-bottom: 3px solid var(--blue); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4); transition: 0.3s; 
+  position: relative;
 }
 .player-card:hover { border-color: var(--blue); box-shadow: 0 0 15px rgba(88, 166, 255, 0.2); }
-.player-label { font-size: 10px; font-weight: bold; color: #8b949e; margin-bottom: 8px; letter-spacing: 1px; }
+.player-label { font-size: 10px; font-weight: bold; color: #8b949e; margin-bottom: 8px; letter-spacing: 1px; display: flex; align-items: center; gap: 5px;}
+.card-avatar { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border); object-fit: cover; }
 .stat-item { font-size: 1em; margin: 6px 0; font-weight: 500; }
 .val-text { font-family: "Courier New", monospace; font-weight: bold; margin-left: 5px; }
 
@@ -192,6 +203,9 @@ body {
 .reload-btn { background: #c53c35 !important; width: 100%; margin-bottom: 15px; padding: 12px; border-radius: 8px; font-weight: bold; color: white; border: none; cursor: pointer; transition: 0.2s; }
 .reload-btn:hover { filter: brightness(1.2); }
 
+.btn-main { border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+.btn-main.disabled { opacity: 0.4; cursor: not-allowed; }
+
 .t-def { background: #3fb950 !important; }
 .t-duck { background: #8957e5 !important; }
 .t-spike { background: #d29922 !important; }
@@ -209,13 +223,15 @@ body {
 .s-btn.disabled { background: #30363d; color: #484f58; opacity: 0.5; cursor: not-allowed; }
 .tactical-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 12px; }
 
-/* ==================== 顶部 Header ==================== */
+/* ==================== 顶部 Header (认输与退出同列) ==================== */
 #game-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 15px; }
 .header-left .logo-text { font-size: 1.5em; font-weight: 900; color: var(--blue); letter-spacing: 1px; }
 .header-right { display: flex; align-items: center; gap: 10px; }
 #round-badge { background: #1f6feb; padding: 4px 12px; border-radius: 20px; font-size: 0.8em; font-weight: bold; }
-#exit-game-btn { background: transparent; border: 1px solid var(--red); color: var(--red); padding: 5px 12px; border-radius: 6px; font-size: 0.8em; cursor: pointer; transition: 0.2s; }
-#exit-game-btn:hover { background: var(--red); color: white; }
+
+/* 统一右上角的退出与认输按钮样式 */
+#exit-game-btn, #surrender-game-btn { background: transparent; border: 1px solid var(--red); color: var(--red); padding: 5px 12px; border-radius: 6px; font-size: 0.8em; cursor: pointer; transition: 0.2s; margin-left: 8px;}
+#exit-game-btn:hover, #surrender-game-btn:hover { background: var(--red); color: white; }
 
 /* ==================== 房间建房区 ==================== */
 .setup-panel { display: flex; gap: 8px; margin-bottom: 15px; justify-content: center; flex-direction: column; }
@@ -230,6 +246,13 @@ body {
 .setup-btn.host-btn-quad:hover { filter: brightness(1.2); }
 .setup-btn.join-btn { background: var(--gold); border-color: var(--gold); }
 .setup-btn.join-btn:hover { filter: brightness(1.2); }
+
+/* ==================== 头像上传相关 ==================== */
+.avatar-upload-label { cursor: pointer; position: relative; display: inline-block; }
+.avatar-upload-label img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold); transition: 0.2s; }
+.avatar-upload-label:hover img { filter: brightness(0.8); }
+.avatar-upload-label input[type="file"] { display: none; }
+.avatar-upload-hint { position: absolute; bottom: -5px; right: -5px; background: var(--blue); font-size: 10px; padding: 2px 5px; border-radius: 10px; }
 
 /* ==================== 手机端屏幕专属适配 ==================== */
 @media screen and (max-width: 768px) {
@@ -254,7 +277,7 @@ body {
 
   .header-left .logo-text { font-size: 1.2em; }
   #round-badge { font-size: 0.75em; padding: 4px 8px; }
-  #exit-game-btn { font-size: 0.75em; padding: 4px 8px; }
+  #exit-game-btn, #surrender-game-btn { font-size: 0.75em; padding: 4px 8px; margin-left: 4px;}
 
   /* 祈祷按钮在手机上更紧凑 */
   #prayer-options-container { flex-direction: column; gap: 10px; }
