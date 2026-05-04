@@ -220,51 +220,20 @@
               </button>
             </div>
 
-            <div
-              id="changelog-module"
-              style="
-                grid-column: 1/-1;
-                background: rgba(0, 0, 0, 0.3);
-                border: 1px solid var(--border);
-                border-radius: 12px;
-                padding: 15px;
-                text-align: left;
-              "
-            >
-              <div
-                style="
-                  color: var(--blue);
-                  font-weight: bold;
-                  font-size: 0.95em;
-                  margin-bottom: 10px;
-                "
-              >
-                🛠️ 系统更新日志 (v15.6)
-              </div>
-              <div
-                class="rules-body"
-                style="
-                  max-height: 140px;
-                  overflow-y: auto;
-                  font-size: 0.85em;
-                  padding-right: 8px;
-                "
-              >
-                <p><strong>[全新机缘] 封血鸩毒 & 安魂协奏：</strong></p>
+            <div id="changelog-module" style="grid-column: 1/-1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 15px; text-align: left;">
+              <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.8 深渊领主)</div>
+              <div class="rules-body" style="max-height: 140px; overflow-y: auto; font-size: 0.85em; padding-right: 8px;">
+                <p><strong>[全新模式] 深渊领主 (1v3 非对称对抗)：</strong></p>
                 <ul>
-                  <li>
-                    【封血鸩毒】：开火与装弹异化，调制鸩毒强行渗透目标，周期性爆发真伤。
-                  </li>
-                  <li>
-                    【安魂协奏】：奏响韵律和鸣，最高概率让敌人陷入疯狂直接自残！
-                  </li>
+                  <li>首个非对称玩法上线！1位Boss对战3位讨伐特工。</li>
+                  <li><strong>领主特权</strong>：拥有 2.5 倍血量与 1.5 倍弹药，阵亡时自带一次【满状态狂暴重生】。</li>
+                  <li><strong>双核机缘</strong>：Boss可同时装备【机制】与【数值】双机缘！新增两款Boss专属强力数值专武。</li>
                 </ul>
-                <p><strong>[平衡与社交体验] 狂击回调与头像识别：</strong></p>
+                <p><strong>[系统拓展] 演练沙盒与AI觉醒：</strong></p>
                 <ul>
-                  <li>
-                    【蚀命狂击】全面回调，弹药储存与爆发上限飙升，极大提升恶魔压制力！
-                  </li>
-                  <li>好友通讯网全面支持特工个人头像识别。</li>
+                  <li>单机模式全面升级为【沙盒引擎】，玩家现可自由为所有人机指派特定机缘，方便战术流派演练。</li>
+                  <li>多人联机大厅开放【补充人机】功能，人数不足亦可直接发车。</li>
+                  <li><strong>AI 仇恨系统重构</strong>：去除了旧版对玩家的死仇锁定，AI 之间也会进行残酷内耗博弈；在 Boss 战中 AI 将具备高智能的阵营寻敌逻辑。</li>
                 </ul>
               </div>
             </div>
@@ -672,41 +641,14 @@
         </div>
 
         <div id="step-pve" style="display: none">
-          <h3
-            style="
-              color: #c9d1d9;
-              margin-bottom: 15px;
-              margin-top: 0;
-              font-size: 1.1em;
-              text-align: center;
-            "
-          >
-            选择演练规模
-          </h3>
-          <button
-            class="mode-btn mode-pve"
-            style="background: #0969da"
-            onclick="selectMode('pve', 2)"
-          >
-            单机演练 (1v1 双人局)
-          </button>
-          <button
-            class="mode-btn mode-pve"
-            style="background: #1f6feb"
-            onclick="selectMode('pve', 3)"
-          >
-            单机演练 (1v2 三人局)
-          </button>
-          <button
-            class="mode-btn mode-pve"
-            style="background: #3b82f6"
-            onclick="selectMode('pve', 4)"
-          >
-            单机演练 (1v3 四人局)
-          </button>
-          <button class="back-link" onclick="hidePveOptions()">
-            ← 返回模式选择
-          </button>
+          <h3 style="color: #c9d1d9; margin-bottom: 15px; margin-top: 0; font-size: 1.1em; text-align: center;">基础单机演练</h3>
+          <button class="mode-btn mode-pve" style="background: #0969da; margin-top:5px; padding:12px;" onclick="openPveSetup(2, false)">1v1 双人局</button>
+          <button class="mode-btn mode-pve" style="background: #1f6feb; margin-top:5px; padding:12px;" onclick="openPveSetup(3, false)">1v2 三人局</button>
+          <button class="mode-btn mode-pve" style="background: #3b82f6; margin-top:5px; padding:12px;" onclick="openPveSetup(4, false)">1v3 四人局</button>
+
+          <h3 style="color: #f85149; margin: 15px 0 10px 0; font-size: 1.1em; text-align: center;">深渊领主 (BOSS战)</h3>
+          <button class="mode-btn mode-pve" style="background: var(--red); margin-top:5px; padding:12px;" onclick="openPveSetup(4, true)">1v3 非对称BOSS战</button>
+          <button class="back-link" onclick="hidePveOptions()">← 返回模式选择</button>
         </div>
       </div>
     </div>
@@ -882,12 +824,11 @@
           <div id="lobby-p4-status" class="lobby-status">等待...</div>
         </div>
       </div>
-      <button
-        id="lobby-action-btn"
-        class="mode-btn ver-stable"
-        style="margin-top: 30px"
-      >
+      <button id="lobby-action-btn" class="mode-btn ver-stable" style="margin-top: 30px">
         准备就绪
+      </button>
+      <button id="lobby-add-ai-btn" class="mode-btn" style="display:none; background:var(--purple); margin-top: 10px;" onclick="addAiToRoom()">
+        补充 AI 人机
       </button>
       <button class="back-link" onclick="exitGame()">退出房间</button>
     </div>
@@ -1108,6 +1049,9 @@
           </button>
           <button class="setup-btn host-btn-quad" onclick="createRoom(4)">
             建四人房
+          </button>
+          <button class="setup-btn" style="background:var(--red); border-color:var(--red);" onclick="createRoom(4, true)">
+            建BOSS房 (1v3)
           </button>
         </div>
         <div class="setup-col divider"><span>- OR -</span></div>
@@ -1508,21 +1452,30 @@
           </div>
         </div>
 
-        <div id="room-chat-panel" style="display: none">
-          <div id="room-chat-list" class="chat-list-container"></div>
-          <div id="room-chat-input-area">
-            <input
-              type="text"
-              id="room-chat-input"
-              placeholder="按回车或点击发送..."
-              maxlength="40"
-            />
-            <button id="room-chat-send" onclick="sendRoomChat()">发送</button>
-          </div>
+<!-- 局内房间聊天 -->
+      <div id="room-chat-panel" style="display: none">
+        <div id="room-chat-list" class="chat-list-container"></div>
+        <div id="room-chat-input-area">
+          <input type="text" id="room-chat-input" placeholder="按回车或点击发送..." maxlength="40" />
+          <button id="room-chat-send" onclick="sendRoomChat()">发送</button>
         </div>
       </div>
-    </div>
 
-    <script src="script.js"></script>
-  </body>
+    </div>
+  </div>
+
+  <!-- 全新：PvE 机缘沙盒定制模态框 (就放在 script 引入的上面，这里最安全) -->
+  <div id="pve-setup-overlay" style="display: none" class="fixed-overlay" onclick="this.style.display='none'">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width: 500px; width: 95%;">
+      <h2 style="color: var(--blue); margin-top: 0;">⚙️ 战局沙盒定制</h2>
+      <p style="color: #8b949e; font-size: 0.85em; margin-bottom: 15px;">自由分配所有人机的初始机缘，方便深度测试</p>
+      <div id="pve-setup-list" style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height: 400px; overflow-y: auto;">
+        <!-- JS 动态注入 -->
+      </div>
+      <button class="setup-btn host-btn" style="width: 100%; margin-top: 20px; padding: 12px; font-size:1.1em;" onclick="startCustomPve()">跃迁出击</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
 </html>

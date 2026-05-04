@@ -215,6 +215,98 @@ function hidePveOptions() {
   document.getElementById('step-mode').style.display = 'block';
 }
 
+let pveSetupConfig = { cap: 2, isBossMode: false };
+
+function openPveSetup(cap, isBossMode) {
+    pveSetupConfig = { cap, isBossMode };
+    const list = document.getElementById('pve-setup-list');
+    list.innerHTML = "";
+
+    // 渲染机制机缘下拉
+    const mechs = TALENT_POOL.mechanism;
+    let mechOptions = `<option value="random">🎲 随机机制机缘</option><option value="none">🚫 无机缘</option>`;
+    mechs.forEach(t => { mechOptions += `<option value="${t.id}">[${t.type === 'angel'?'👼':t.type==='demon'?'😈':'👺'}] ${t.name}</option>`; });
+
+    if (isBossMode) {
+        list.innerHTML += `<div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:8px;">
+            <label style="color:var(--gold); font-weight:bold;">扮演身份：</label>
+            <select id="pve-role-select" class="cyber-select"><option value="boss">😈 深渊领主 (BOSS)</option><option value="player">⚔️ 讨伐特工</option></select>
+        </div>`;
+    }
+    for(let i=1; i<=cap; i++) {
+        let label = i===1 ? "你 (Player)" : `AI 人机 ${i-1}`;
+        list.innerHTML += `<div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:8px;">
+            <label style="color:var(--cyan); font-weight:bold;">${label} 机制：</label>
+            <select id="pve-t-${i}" class="cyber-select">${mechOptions}</select>
+            ${isBossMode ? `<select id="pve-num-${i}" class="cyber-select" style="margin-top:5px;"><option value="none">🚫 无数值加成</option><option value="b_n1">军火狂人(Boss专武)</option><option value="b_n2">叹息之墙(Boss专武)</option></select>` : ''}
+        </div>`;
+    }
+    document.getElementById('mode-overlay').style.display = 'none';
+    document.getElementById('pve-setup-overlay').style.display = 'flex';
+}
+
+function startCustomPve() {
+    let isBoss = pveSetupConfig.isBossMode;
+    let cap = pveSetupConfig.cap;
+    let bossRole = "p4"; 
+    if (isBoss) {
+        let roleSel = document.getElementById('pve-role-select').value;
+        bossRole = roleSel === 'boss' ? 'p1' : `p${cap}`; 
+    }
+
+    isPvE = true; myRole = 'p1';
+    gameState = getInitialState(cap, isBoss, bossRole);
+    gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title; gameState.p1.avatar = currentUser.avatar;
+    gameState.status = 'playing';
+
+    const allMechs = TALENT_POOL.mechanism;
+    const allNums = TALENT_POOL.numerical;
+
+    // 严苛赋予机缘
+    for (let i = 1; i <= cap; i++) {
+        let pk = 'p' + i;
+        let pData = gameState[pk];
+        if (i > 1) {
+            pData.joined = true; pData.ready = true;
+            pData.uid = "AI_" + i; pData.username = "AI - 演练机甲"; pData.title = "人机";
+        } else {
+            pData.joined = true; pData.ready = true;
+        }
+
+        let tSel = document.getElementById(`pve-t-${i}`).value;
+        if (tSel !== "none") {
+            let mech = tSel === "random" ? allMechs[Math.floor(Math.random() * allMechs.length)] : allMechs.find(t=>t.id===tSel);
+            pData.talent = mech;
+            applyTalentMods(pData, mech, gameState.config);
+        }
+        if (isBoss && pk === bossRole) {
+            let numSel = document.getElementById(`pve-num-${i}`).value;
+            if (numSel !== "none") {
+                let num = allNums.find(t=>t.id===numSel);
+                pData.numTalent = num; 
+                applyTalentMods(pData, num, gameState.config); 
+            }
+        }
+    }
+    document.getElementById('pve-setup-overlay').style.display = 'none';
+    document.getElementById('game-container').style.display = 'block';
+    render(gameState);
+}
+
+// ==================== 联机添加 AI ====================
+function addAiToRoom() {
+    if (!roomRef || myRole !== 'p1') return;
+    const cap = gameState.config.capacity;
+    let emptySlot = null;
+    for (let i = 2; i <= cap; i++) {
+        if (!gameState['p' + i] || !gameState['p' + i].joined) { emptySlot = 'p' + i; break; }
+    }
+    if (emptySlot) {
+        let aiNames = ["深渊侍卫", "虚空行者", "机械降神"];
+        roomRef.child(emptySlot).update({ joined: true, ready: true, uid: "AI_" + Date.now(), username: aiNames[Math.floor(Math.random()*3)], title: "人机补位" });
+    }
+}
+
 // ==================== 世界聊天系统 (终端广播) ====================
 function openGlobalChat() {
     document.getElementById('hub-overlay').style.display = 'none';
@@ -599,11 +691,13 @@ function isMoveFromTalent(move, talentId) {
 }
 
 // 异教徒(heretic)与圣魔机缘池
-const TALENT_POOL = {
-  numerical: [
-    { id: 'n_d1', type: 'demon', category: '数值', name: '军火狂人', desc: '弹药 +4，血量与上限 -3\n代价：第一回合绝对禁止射击。' },
-    { id: 'n_d2', type: 'demon', category: '数值', name: '叹息之墙', desc: '护盾 +3，血量与上限 -3\n代价：容错极低的防御型，考验身法。' }
-  ],
+  const TALENT_POOL = {
+    numerical: [
+      { id: 'n_d1', type: 'demon', category: '数值', name: '军火狂人', desc: '弹药 +4，血量与上限 -3\n代价：第一回合绝对禁止射击。' },
+      { id: 'n_d2', type: 'demon', category: '数值', name: '叹息之墙', desc: '护盾 +3，血量与上限 -3\n代价：容错极低的防御型，考验身法。' },
+      { id: 'b_n1', type: 'demon', category: '数值', name: '军火狂人(Boss)', desc: '弹药上限改为14，血量上限降低2。' },
+      { id: 'b_n2', type: 'demon', category: '数值', name: '叹息之墙(Boss)', desc: '护盾上限改为14，血量上限降低2。' }
+    ],
   mechanism: [
     { id: 'm_a1', type: 'angel', category: '机制', name: '圣盾坚壁', desc: '使用防御时获得 2 层护盾。\n代价：单次射击最高被限制为 2 发。' },
     { id: 'm_a2', type: 'angel', category: '机制', name: '圣戒', desc: '专属动作【圣光】(每5回合可用)：无视防御抽取目标1血量反哺自身。发动该动作的回合，自身进入霸体状态，免疫一切外界伤害。\n代价：丧失【包扎】能力。' },
@@ -628,7 +722,7 @@ const TALENT_POOL = {
 };
 
 // ==================== 数据生成器 ====================
-function getInitialState(capacity) {
+function getInitialState(capacity, isBossMode = false, explicitBossRole = "") {
   let hp = 5; let maxAmmo = 4; let maxShield = 4;
   if (capacity === 4) { hp = 9; maxAmmo = 6; maxShield = 6; } else if (capacity === 3) { hp = 7; maxAmmo = 5; maxShield = 5; }
 
@@ -637,32 +731,49 @@ function getInitialState(capacity) {
   if (capacity >= 2) candidates.push('p2');
   if (capacity >= 3) candidates.push('p3');
   if (capacity >= 4) candidates.push('p4');
+
+  let bossRole = "";
+  if (isBossMode) { bossRole = explicitBossRole || candidates[Math.floor(Math.random() * candidates.length)]; }
+
+  // 严格划定全局唯一使用者名单，避免撞车
   let h1Candidate = candidates[Math.floor(Math.random() * candidates.length)];
   let h5Candidate = candidates[Math.floor(Math.random() * candidates.length)];
+  let d5Candidate = candidates[Math.floor(Math.random() * candidates.length)];
+  let h7Candidate = candidates[Math.floor(Math.random() * candidates.length)];
 
   let state = { 
-    config: { capacity: capacity, maxAmmo: maxAmmo, maxShield: maxShield, baseHp: hp, h1_candidate: h1Candidate, h5_candidate: h5Candidate }, 
+    config: { capacity: capacity, maxAmmo: maxAmmo, maxShield: maxShield, baseHp: hp, h1_candidate: h1Candidate, h5_candidate: h5Candidate, d5_candidate: d5Candidate, h7_candidate: h7Candidate, isBossMode: isBossMode, bossRole: bossRole }, 
     log: "准备就绪，请出招！", round: 1, status: 'waiting', playAgain: { p1: false, p2: false, p3: false, p4: false },
     illusionTimer: 0, sanityData: {}
   };
-  state.p1 = createBasePlayer(capacity >= 1 ? hp : 0, hp, maxAmmo, maxShield);
-  state.p2 = createBasePlayer(capacity >= 2 ? hp : 0, hp, maxAmmo, maxShield);
-  state.p3 = createBasePlayer(capacity >= 3 ? hp : 0, hp, maxAmmo, maxShield);
-  state.p4 = createBasePlayer(capacity >= 4 ? hp : 0, hp, maxAmmo, maxShield);
+
+  const createPlayer = (slot) => {
+      let php = hp; let pammo = maxAmmo; let pshield = maxShield;
+      if (isBossMode && slot === bossRole) {
+          php = Math.ceil(hp * 2.5);
+          pammo = Math.ceil(maxAmmo * 1.5);
+      }
+      let p = createBasePlayer(slot, capacity >= candidates.length ? php : 0, php, pammo, pshield);
+      if (isBossMode && slot === bossRole) p.bossRevived = false;
+      return p;
+  };
+
+  state.p1 = createPlayer('p1'); state.p2 = createPlayer('p2');
+  state.p3 = createPlayer('p3'); state.p4 = createPlayer('p4');
   return state;
 }
 
-function createBasePlayer(currentHp, maxHp, maxAmmo, maxShield) {
-  return { uid: "", username: "", title: "", avatar: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", 
-    talent: null, extraTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, stealthCd: 0, 
+function createBasePlayer(roleSlot, currentHp, maxHp, maxAmmo, maxShield) {
+  return { role: roleSlot, uid: "", username: "", title: "", avatar: "", hp: currentHp, maxHp: maxHp, ammo: 0, maxAmmo: maxAmmo, shield: 1, maxShield: maxShield, move: "", val: 0, target: "", 
+    talent: null, extraTalent: null, numTalent: null, joined: false, ready: false, healCd: 0, talentCd: 0, holyCd: 0, fatalCd: 0, dualCd: 0, symCd: 0, stealthCd: 0, 
     sealCharges: 1, sealDmgTimer: 0, rerolled: false, 
     reviveCount: 0, reviveCharges: 0, a5Recoveries: [], actionCount: 0, silenced: 0, h3State: '勿视', h3Timer: 0, roundDmg: 0, roundSanityDmg: 0,
     pocketInventory: [], pocketUses: 0, h1SurviveTimer: 0, extraTalentTimer: 0,
     stealthTimer: 0, stealthDefUsed: false, autoStealthUsed: false,
     necroCharges: 0, zombieTimer: 0, zombieMaster: "",
     pendingLoot: null, lootedMark: false,
-    poison: 0, poisonStacks: 0, poisonTimer: 0, poisonDmgTaken: 0, // m_d5 字段
-    rhythm: 0, confusedRate: 0 // m_h7 字段
+    poison: 0, poisonStacks: 0, poisonTimer: 0, poisonDmgTaken: 0, 
+    rhythm: 0, confusedRate: 0 
   };
 }
 
@@ -689,12 +800,12 @@ function selectMode(mode, cap) {
   } else { document.getElementById('room-setup').style.display = 'flex'; }
 }
 
-function createRoom(capacity) {
+function createRoom(capacity, isBossMode = false) {
   const rid = Math.random().toString(36).substring(2, 7).toUpperCase();
   myRole = 'p1'; currentRoomId = rid; document.getElementById('room-setup').style.display = 'none';
   const dbPath = gameVersion === 'beta' ? "rooms_beta/" : "rooms_v2/";
   roomRef = db.ref(dbPath + rid);
-  let newRoom = getInitialState(capacity);
+  let newRoom = getInitialState(capacity, isBossMode);
   newRoom.p1.joined = true; newRoom.p1.uid = currentUser.uid; newRoom.p1.username = currentUser.username; newRoom.p1.title = currentUser.title; newRoom.p1.avatar = currentUser.avatar;
   roomRef.set(newRoom);
   roomRef.onDisconnect().remove();
@@ -810,6 +921,11 @@ function renderLobby(rid) {
   const cap = gameState.config.capacity;
   updateLobbyPlayer('p1', gameState.p1, 1 <= cap); updateLobbyPlayer('p2', gameState.p2, 2 <= cap); updateLobbyPlayer('p3', gameState.p3, 3 <= cap); updateLobbyPlayer('p4', gameState.p4, 4 <= cap);
   const actionBtn = document.getElementById('lobby-action-btn');
+  const aiBtn = document.getElementById('lobby-add-ai-btn');
+  if (aiBtn) {
+      if (myRole === 'p1' && gameState.config.isBossMode) aiBtn.style.display = 'inline-block';
+      else aiBtn.style.display = 'none';
+  }
   if (myRole === 'spectator') actionBtn.style.display = 'none';
   else {
     actionBtn.style.display = 'inline-block'; const myData = gameState[myRole];
@@ -943,9 +1059,11 @@ function showTalentSelection(isReroll, bias) {
   const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
   for (let i = 0; i < allItems.length; i++) {
     let item = allItems[i];
-    // 限制：苟且偷生/血色幻境只展示给特定的候选人
+    // 限制：全场唯一机缘只展示给特定的候选人
     if (item.id === 'm_h1' && gameState.config.h1_candidate !== myRole) continue;
     if (item.id === 'm_h5' && gameState.config.h5_candidate !== myRole) continue;
+    if (item.id === 'm_d5' && gameState.config.d5_candidate !== myRole) continue;
+    if (item.id === 'm_h7' && gameState.config.h7_candidate !== myRole) continue;
 
     let weight = 1;
     if (bias !== 'atheist') {
@@ -971,34 +1089,38 @@ function showTalentSelection(isReroll, bias) {
 
 function removeTalentMods(playerData, t, config) {
   if (!t) return;
+  // 计算基于Boss的基础上限以备重置
+  let baseHp = (config.isBossMode && playerData.role === config.bossRole) ? Math.ceil(config.baseHp * 2.5) : config.baseHp;
+  let baseAmmo = (config.isBossMode && playerData.role === config.bossRole) ? Math.ceil(config.maxAmmo * 1.5) : config.maxAmmo;
+
   if (t.id === 'n_d1') { playerData.ammo -= 4; playerData.maxHp += 3; playerData.hp += 3; } 
   else if (t.id === 'n_d2') { playerData.shield += 3; playerData.maxHp += 3; playerData.hp += 3; } 
   else if (t.id === 'm_d3') {
     playerData.maxHp += 2; playerData.hp += 2; playerData.maxShield = config.maxShield;
     if (gameState && gameState.round >= 120) { playerData.maxShield -= 2; if (playerData.maxShield < 0) playerData.maxShield = 0; playerData.maxHp -= 2; if (playerData.maxHp < 1) playerData.maxHp = 1; }
   } else if (t.id === 'm_a5' || t.id === 'm_h3') {
-    playerData.maxHp = config.baseHp; playerData.maxAmmo = config.maxAmmo; playerData.maxShield = config.maxShield;
+    playerData.maxHp = baseHp; playerData.maxAmmo = baseAmmo; playerData.maxShield = config.maxShield;
     if (gameState && gameState.round >= 120) { playerData.maxShield -= 2; if (playerData.maxShield < 0) playerData.maxShield = 0; playerData.maxHp -= 2; if (playerData.maxHp < 1) playerData.maxHp = 1; }
   } else if (t.id === 'm_h6') {
     playerData.maxHp += 1; playerData.maxShield += 1; 
-  }
-  // 【新增】：卸下狂击时，恢复房间默认的弹药上限
-  else if (t.id === 'm_d4') { 
-    playerData.maxAmmo = config.maxAmmo; 
-  }
-  // 【新增】：卸下封血鸩毒时，把扣掉的血量加回来，加的护盾扣回去
-  else if (t.id === 'm_d5') { 
+  } else if (t.id === 'm_d4') { 
+    playerData.maxAmmo = baseAmmo; 
+  } else if (t.id === 'm_d5') { 
     playerData.maxHp += 1; 
     playerData.maxShield = Math.max(0, playerData.maxShield - 1); 
   }
+
   if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
   if (playerData.ammo > playerData.maxAmmo) playerData.ammo = playerData.maxAmmo;
   if (playerData.shield > playerData.maxShield) playerData.shield = playerData.maxShield;
 }
 
-
-function applyTalentMods(playerData, t) {
+function applyTalentMods(playerData, t, config) {
   if (!t) return;
+  // Boss专属数值机缘
+  if (t.id === 'b_n1') { playerData.maxAmmo = 14; playerData.maxHp -= 2; playerData.hp = Math.min(playerData.hp, playerData.maxHp); }
+  else if (t.id === 'b_n2') { playerData.maxShield = 14; playerData.maxHp -= 2; playerData.hp = Math.min(playerData.hp, playerData.maxHp); }
+
   if (t.id === 'n_d1') { playerData.ammo += 4; playerData.maxHp -= 3; playerData.hp -= 3; } 
   else if (t.id === 'n_d2') { playerData.shield += 3; playerData.maxHp -= 3; playerData.hp -= 3; } 
   else if (t.id === 'm_d3') { playerData.maxHp -= 2; playerData.hp -= 2; playerData.maxShield = 2; if (playerData.shield > 2) playerData.shield = 2; }
@@ -1030,11 +1152,9 @@ function applyTalentMods(playerData, t) {
     playerData.maxShield = Math.max(0, playerData.maxShield - 1);
     playerData.shield = Math.min(playerData.shield, playerData.maxShield);
   }
-// 【新增】：装备狂击时，强制锁定弹药上限为 6
   else if (t.id === 'm_d4') { 
     playerData.maxAmmo = 6; 
   }
-  // 【新增】：装备封血鸩毒时，血量上限 -1（卡死当前血量），护盾上限 +1
   else if (t.id === 'm_d5') {
     playerData.maxHp = Math.max(1, playerData.maxHp - 1); 
     playerData.hp = Math.min(playerData.hp, playerData.maxHp);
@@ -1067,10 +1187,12 @@ function applyTalent(t, isReroll) {
             const aiBiasOptions = ['angel', 'demon', 'heretic', 'atheist'];
             const aiBias = aiBiasOptions[Math.floor(Math.random() * aiBiasOptions.length)];
             const weightedPool = []; const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
-            for (let j = 0; j < allItems.length; j++) {
-              if (allItems[j].id === 'm_h1' && gameState.config.h1_candidate !== pk) continue;
-              if (allItems[j].id === 'm_h5' && gameState.config.h5_candidate !== pk) continue;
-              let weight = 1; 
+              for (let j = 0; j < allItems.length; j++) {
+                if (allItems[j].id === 'm_h1' && gameState.config.h1_candidate !== pk) continue;
+                if (allItems[j].id === 'm_h5' && gameState.config.h5_candidate !== pk) continue;
+                if (allItems[j].id === 'm_d5' && gameState.config.d5_candidate !== pk) continue;
+                if (allItems[j].id === 'm_h7' && gameState.config.h7_candidate !== pk) continue;
+                let weight = 1;
               if (aiBias !== 'atheist') {
                   if (aiBias === 'angel' && allItems[j].type === 'angel') weight = 3; 
                   if (aiBias === 'demon' && allItems[j].type === 'demon') weight = 3; 
@@ -1093,10 +1215,15 @@ function applyTalent(t, isReroll) {
       gameState.p1.talent = t; applyTalentMods(gameState.p1, t);
       const allItems = [...TALENT_POOL.numerical, ...TALENT_POOL.mechanism];
 
-      for (let i = 2; i <= gameState.config.capacity; i++) {
-         let pk = 'p' + i;
-         const aiItems = allItems.filter(item => !(item.id === 'm_h1' && gameState.config.h1_candidate !== pk) && !(item.id === 'm_h5' && gameState.config.h5_candidate !== pk));
-         const aiT = aiItems[Math.floor(Math.random() * aiItems.length)];
+        for (let i = 2; i <= gameState.config.capacity; i++) {
+           let pk = 'p' + i;
+           const aiItems = allItems.filter(item => 
+               !(item.id === 'm_h1' && gameState.config.h1_candidate !== pk) && 
+               !(item.id === 'm_h5' && gameState.config.h5_candidate !== pk) && 
+               !(item.id === 'm_d5' && gameState.config.d5_candidate !== pk) && 
+               !(item.id === 'm_h7' && gameState.config.h7_candidate !== pk)
+           );
+           const aiT = aiItems[Math.floor(Math.random() * aiItems.length)];
          gameState[pk].talent = aiT; applyTalentMods(gameState[pk], aiT);
       }
       render(gameState); 
@@ -1300,7 +1427,7 @@ function handleInput(move, val = 0) {
   if (move === 'fatal_shoot') {
     if (!hasTalent(myData, 'm_d4')) return alert("非法操作！");
     if (myData.fatalCd > 0) return alert("【狂击】冷却中，还需 " + myData.fatalCd + " 回合！");
-    if (val > 3) return alert("【狂击】单次最多消耗 3 发弹药！");
+    if (val > 5) return alert("【狂击】单次最多消耗 5 发弹药！");
   }
   if (move === 'heretic_seal') {
     if (!hasTalent(myData, 'm_h2')) return alert("非法操作！");
@@ -1352,19 +1479,32 @@ function handleInput(move, val = 0) {
   }
 }
 
-// 核心更新：AI 行为树兼容多敌方数组，并学习释放共生，优化狂击使用上限
 function getSmartAiMove(aiKey, enemiesArray) {
   const ai = gameState[aiKey]; 
-  let oppKey = enemiesArray.includes('p1') ? 'p1' : (enemiesArray[0] || null);
+
+  // ================= 智能且非偏心的寻敌逻辑 =================
+  let validEnemies = [];
+  if (gameState.config.isBossMode) {
+      if (aiKey === gameState.config.bossRole) {
+          // 如果 AI 是 Boss，随机挑选活着的玩家，绝不偏袒 p1
+          validEnemies = enemiesArray.filter(e => e !== aiKey && gameState[e].hp > 0 && gameState[e].stealthTimer <= 0);
+      } else {
+          // 如果 AI 是玩家，死咬 Boss
+          validEnemies = [gameState.config.bossRole].filter(e => gameState[e] && gameState[e].hp > 0 && gameState[e].stealthTimer <= 0);
+      }
+  } else {
+      // 混战模式：谁也不帮，随机打一个倒霉蛋
+      validEnemies = enemiesArray.filter(e => gameState[e].hp > 0 && gameState[e].stealthTimer <= 0);
+  }
+
+  let oppKey = validEnemies.length > 0 ? validEnemies[Math.floor(Math.random() * validEnemies.length)] : null;
   const human = oppKey ? gameState[oppKey] : null; 
   let allowedMoves = [];
 
   if (ai.silenced > 0) return { move: 'skip', val: 0 };
 
-  // 亡魂 AI (高攻击欲望)
   let isAggressive = (ai.zombieTimer > 0);
 
-  // Stealth AI logic
   if (ai.stealthTimer > 0) {
       if (!ai.stealthDefUsed) {
           if (!hasTalent(ai, 'm_h3') || ai.h3State !== '勿听') allowedMoves.push('duck');
@@ -1377,7 +1517,7 @@ function getSmartAiMove(aiKey, enemiesArray) {
   }
 
   let baseMoves = ['reload', 'shield', 'duck', 'ground_spike', 'rock'];
-  if (isAggressive) baseMoves = ['reload', 'ground_spike', 'rock']; // 亡魂不防御
+  if (isAggressive) baseMoves = ['reload', 'ground_spike', 'rock']; 
 
   for (let i = 0; i < baseMoves.length; i++) {
     let m = baseMoves[i]; let pushIt = true;
@@ -1386,23 +1526,16 @@ function getSmartAiMove(aiKey, enemiesArray) {
     if (pushIt) allowedMoves.push(m);
   }
 
-  if (hasTalent(ai, 'm_h5') && ai.talentCd === 0 && ai.ammo >= 4 && ai.shield >= 4) {
-      allowedMoves.push('crimson_illusion', 'crimson_illusion', 'crimson_illusion');
-  }
-
-  if (hasTalent(ai, 'm_a6') && ai.stealthCd === 0 && !isAggressive) {
-      if (ai.hp <= 3 || Math.random() < 0.4) allowedMoves.push('stealth_action', 'stealth_action');
-  }
+  if (hasTalent(ai, 'm_h5') && ai.talentCd === 0 && ai.ammo >= 4 && ai.shield >= 4) { allowedMoves.push('crimson_illusion', 'crimson_illusion'); }
+  if (hasTalent(ai, 'm_a6') && ai.stealthCd === 0 && !isAggressive) { if (ai.hp <= 3 || Math.random() < 0.4) allowedMoves.push('stealth_action'); }
   if (hasTalent(ai, 'm_a2') && ai.holyCd === 0 && human) allowedMoves.push('holy_light', 'holy_light');
   if (hasTalent(ai, 'm_a4') && ai.dualCd === 0 && ai.hp < ai.maxHp && !isAggressive) {
     if (ai.hp <= 3 && Math.random() < 0.7) return { move: 'dual_heal', val: 0 };
     allowedMoves.push('dual_heal');
   }
-  if (hasTalent(ai, 'm_h2') && ai.talentCd === 0 && ai.sealCharges > 0) {
-    if (human && human.hp > 0) return { move: 'heretic_seal', val: 0 };
-  }
-  if (hasTalent(ai, 'm_h4') && ai.symCd === 0 && enemiesArray.length > 0) {
-    if (ai.hp >= 3 || Math.random() < 0.6) allowedMoves.push('symbiosis', 'symbiosis'); // 有足够血量或搏命时使用
+  if (hasTalent(ai, 'm_h2') && ai.talentCd === 0 && ai.sealCharges > 0) { if (human && human.hp > 0) return { move: 'heretic_seal', val: 0 }; }
+  if (hasTalent(ai, 'm_h4') && ai.symCd === 0 && validEnemies.length > 0) {
+    if (ai.hp >= 3 || Math.random() < 0.6) allowedMoves.push('symbiosis', 'symbiosis');
   }
 
   if (!hasTalent(ai, 'm_a2') && gameState.round < 100 && !isAggressive) {
@@ -1412,9 +1545,15 @@ function getSmartAiMove(aiKey, enemiesArray) {
     }
   }
 
-  let canShoot = true; if (ai.ammo <= 0 || !human) canShoot = false;
+  let canShoot = true; 
+  if (hasTalent(ai, 'm_d5') && ai.poison <= 0) canShoot = false;
+  else if (hasTalent(ai, 'm_h7') && ai.rhythm <= 0) canShoot = false;
+  else if (!hasTalent(ai, 'm_d5') && !hasTalent(ai, 'm_h7') && ai.ammo <= 0) canShoot = false;
+
+  if (!human) canShoot = false;
   if (hasTalent(ai, 'n_d1') && gameState.round === 1) canShoot = false;
   if (hasTalent(ai, 'm_h3') && ai.h3State === '勿视') canShoot = false;
+  if (hasTalent(ai, 'm_d5') && human && human.poisonStacks > 0) canShoot = false; // 不重复下毒
 
   if (human && human.ammo >= 3 && ai.shield === 0 && Math.random() < 0.7 && !isAggressive) {
     let defMoves = [];
@@ -1425,12 +1564,14 @@ function getSmartAiMove(aiKey, enemiesArray) {
 
   let isPiercing = hasTalent(ai, 'm_d1'); let effectiveShield = isPiercing ? 0 : (human ? human.shield : 0);
   if (canShoot) {
-    let maxVal = ai.ammo; if (maxVal > ai.maxAmmo) maxVal = ai.maxAmmo;
+    let maxVal = hasTalent(ai, 'm_d5') ? ai.poison : (hasTalent(ai, 'm_h7') ? ai.rhythm : ai.ammo); 
     if (hasTalent(ai, 'm_a1') && maxVal > 2) maxVal = 2;
     let canFatal = (hasTalent(ai, 'm_d4') && ai.fatalCd === 0);
-    if (human && maxVal > effectiveShield && (maxVal - effectiveShield) >= human.hp) return { move: 'shoot', val: maxVal };
+
+    if (human && maxVal > effectiveShield && (maxVal - effectiveShield) >= human.hp && !hasTalent(ai,'m_d5') && !hasTalent(ai,'m_h7')) return { move: 'shoot', val: maxVal };
+
     if (canFatal && human) {
-      let fatalMax = Math.min(maxVal, 3);
+      let fatalMax = Math.min(maxVal, 5); // 修复狂击 AI 上限为 5
       if ((fatalMax * 2) > effectiveShield && (fatalMax * 2 - effectiveShield) >= human.hp && Math.random() < 0.7) return { move: 'fatal_shoot', val: fatalMax };
       if (Math.random() < 0.4 || isAggressive) return { move: 'fatal_shoot', val: fatalMax };
     }
@@ -1442,11 +1583,11 @@ function getSmartAiMove(aiKey, enemiesArray) {
 
   let chosenMove = allowedMoves[Math.floor(Math.random() * allowedMoves.length)]; let shootVal = 0;
   if (chosenMove === 'shoot' || chosenMove === 'fatal_shoot') {
-    let maxVal = ai.ammo; if (maxVal > ai.maxAmmo) maxVal = ai.maxAmmo;
+    let maxVal = hasTalent(ai, 'm_d5') ? ai.poison : (hasTalent(ai, 'm_h7') ? ai.rhythm : ai.ammo);
     if (hasTalent(ai, 'm_a1') && maxVal > 2) maxVal = 2;
-    if (chosenMove === 'fatal_shoot') maxVal = Math.min(maxVal, 3);
+    if (chosenMove === 'fatal_shoot') maxVal = Math.min(maxVal, 5); // 修复上限
     shootVal = Math.floor(Math.random() * maxVal) + 1;
-    if (isAggressive) shootVal = maxVal; // 亡魂必定满发
+    if (isAggressive) shootVal = maxVal; 
   }
   return { move: chosenMove, val: shootVal };
 }
@@ -1909,8 +2050,22 @@ function processRound() {
      }
   });
 
-  newlyDead.forEach(k => {
-      if (hasTalent(data[k], 'm_a5') && data[k].reviveCharges > 0) {
+        newlyDead.forEach(k => {
+          let pData = data[k];
+
+          // Boss 复活裁决
+          if (data.config.isBossMode && k === data.config.bossRole && !pData.bossRevived) {
+              pData.bossRevived = true;
+              pData.hp = pData.maxHp;
+              pData.ammo = pData.maxAmmo;
+              pData.shield = pData.maxShield;
+              pData.lootedMark = false; 
+              pData.silenced = 0; pData.poisonStacks = 0; pData.poisonTimer = 0; pData.rhythm = 0;
+              logs.push(`<div style="color:var(--red); font-weight:bold; font-size:1.2em; background:rgba(248,81,73,0.2); padding:10px; border-radius:8px;">💥 绝境狂暴！深渊领主 [${pData.username}] 触发重生，三维状态瞬间重回巅峰！</div>`);
+              return; 
+          }
+
+          if (hasTalent(data[k], 'm_a5') && data[k].reviveCharges > 0) {
         data[k].reviveCharges = 0;
         data[k].reviveCount = (data[k].reviveCount || 0) + 1;
         let pName = data[k].username || k.toUpperCase();
@@ -2333,14 +2488,32 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
       if(hpEl) hpEl.parentElement.style.opacity = '1';
   }
 
-  if (hpEl) {
+if (hpEl) {
     hpEl.innerText = `${pData.hp}/${pData.maxHp}`;
     if (pData.hp >= Math.ceil(pData.maxHp * 0.7)) hpEl.style.color = "#3fb950";
     else if (pData.hp >= Math.ceil(pData.maxHp * 0.3)) hpEl.style.color = "#d29922";
     else hpEl.style.color = "#f85149";
   }
-  if (ammoEl) { ammoEl.innerText = `${pData.ammo}/${pData.maxAmmo}`; if (pData.ammo > 0) ammoEl.style.color = "#d29922"; else if (pData.ammo === 0) ammoEl.style.color = "#c9d1d9"; else ammoEl.style.color = "#f85149"; }
+
+  // 动态接管弹药 UI，支持鸩毒与韵律
+  const ammoLabelEl = document.getElementById(`${pKey}-ammo-label`);
+  if (hasTalent(pData, 'm_d5')) {
+      if (ammoLabelEl) ammoLabelEl.innerText = "鸩毒";
+      if (ammoEl) { ammoEl.innerText = `${pData.poison || 0}/5`; ammoEl.style.color = "#a371f7"; }
+  } else if (hasTalent(pData, 'm_h7')) {
+      if (ammoLabelEl) ammoLabelEl.innerText = "韵律";
+      if (ammoEl) { ammoEl.innerText = `${pData.rhythm || 0}/8`; ammoEl.style.color = "#d29922"; }
+  } else {
+      if (ammoLabelEl) ammoLabelEl.innerText = "弹药";
+      if (ammoEl) { ammoEl.innerText = `${pData.ammo}/${pData.maxAmmo}`; if (pData.ammo > 0) ammoEl.style.color = "#d29922"; else if (pData.ammo === 0) ammoEl.style.color = "#c9d1d9"; else ammoEl.style.color = "#f85149"; }
+  }
+
   if (shieldEl) { shieldEl.innerText = `${pData.shield}/${pData.maxShield}`; shieldEl.style.color = "#58a6ff"; }
+
+  // 顺带把 Boss 的双机缘 UI 挂载上去
+  if (pData.numTalent && talentEl) {
+      talentEl.innerHTML += `<br><span style="color:#f85149; font-size:0.9em;">+ [专属] ${pData.numTalent.name}</span>`;
+  }
 }
 
 function updateActionPanel(data) {
