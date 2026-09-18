@@ -9,17 +9,40 @@ const firebaseConfig = {
 };
 
 
-firebase.initializeApp(firebaseConfig);
+// ==================== Firebase / App Check 安全初始化 ====================
+// 后端异常时不要让整份脚本崩溃；游客模式仍可进入本地 PvE 测试。
+let db = null;
+let backendAvailable = false;
+let backendInitError = null;
 
-// ==================== 激活 App Check 防御盾牌 ====================
-const appCheck = firebase.appCheck();
-appCheck.activate(
-  '6LcBLcItAAAAAIpOr3mHkzstlxjnNR02CeeGr-cz',
-  true // 允许系统自动刷新安全 Token
-);
+try {
+  if (typeof firebase === 'undefined') throw new Error('Firebase SDK 未加载');
+  if (!firebase.apps || firebase.apps.length === 0) firebase.initializeApp(firebaseConfig);
+
+  try {
+    if (typeof firebase.appCheck === 'function') {
+      const appCheck = firebase.appCheck();
+      appCheck.activate(
+        '6LcBLcItAAAAAIpOr3mHkzstlxjnNR02CeeGr-cz',
+        true // 允许系统自动刷新安全 Token
+      );
+    } else {
+      console.warn('Firebase App Check SDK 未加载，将继续尝试数据库连接。');
+    }
+  } catch (appCheckErr) {
+    // App Check 本身失败时不阻断游客模式；普通在线功能仍可能因规则拒绝而失败。
+    console.error('App Check 初始化失败:', appCheckErr);
+  }
+
+  db = firebase.database();
+  backendAvailable = true;
+} catch (err) {
+  backendInitError = err;
+  console.error('Firebase 后端初始化失败，已启用游客离线入口:', err);
+}
 // =============================================================
-const db = firebase.database();
 
+let isGuestMode = false;
 let myRole = null, roomRef = null, currentRoomId = "", isPvE = false;
 let gameState = null, gameVersion = 'stable', isProcessing = false; 
 let isRerollingGlobal = false;
@@ -30,6 +53,12 @@ let currentLeaderboardTab = 'angel'; // 默认查看天使榜
 let currentUser = { uid: "", username: "", title: "初阶特工", avatar: "", signatureTalent: "", community: "", stats: { total: 0, wins: 0 }, factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} }, friends: {} };
 
 window.onload = function() {
+  const msg = document.getElementById('auth-msg');
+  if (!backendAvailable) {
+    if (msg) msg.innerText = '在线服务暂不可用，你仍可使用“游客离线测试”进入游戏。';
+    return;
+  }
+
   const cachedUid = localStorage.getItem('pulse_uid');
   if (cachedUid) {
     db.ref('users/' + cachedUid).once('value', function(snap) {
@@ -42,9 +71,39 @@ window.onload = function() {
         if (!currentUser.avatar) currentUser.avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
         enterAfterCommunityCheck();
       } else { localStorage.removeItem('pulse_uid'); }
+    }).catch(function(err) {
+      console.error('自动登录失败:', err);
+      if (msg) msg.innerText = '自动登录失败，可重试账号登录或使用游客离线测试。';
     });
   }
 };
+
+function requireBackend(featureName) {
+  if (!isGuestMode && backendAvailable && db) return true;
+  alert((featureName || '该功能') + '需要在线服务器，游客/离线模式暂不可用。');
+  return false;
+}
+
+function handleGuestLogin() {
+  isGuestMode = true;
+  const defaultAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>G</text></svg>";
+  currentUser = {
+    uid: 'GUEST',
+    username: '游客测试员',
+    title: '离线访客',
+    avatar: defaultAvatar,
+    signatureTalent: '',
+    community: 'guest',
+    stats: { total: 0, wins: 0 },
+    factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} },
+    friends: {}
+  };
+  document.getElementById('community-overlay').style.display = 'none';
+  showHub();
+  const msg = document.getElementById('auth-msg');
+  if (msg) msg.innerText = '';
+}
+
 
 // ==================== 初/高中关系网络隔离 ====================
 function isJuniorCommunity() {
@@ -91,6 +150,7 @@ function requireJuniorSocial() {
 }
 
 function setupPresence() {
+  if (isGuestMode || !backendAvailable || !db) return;
   const connectedRef = db.ref(".info/connected");
   connectedRef.on("value", function(snap) {
     if (snap.val() === true && currentUser.uid) {
@@ -105,13 +165,14 @@ function setupPresence() {
 }
 
 function updateMyPresence(status, roomId, round) {
-   if (!currentUser.uid) return;
+   if (isGuestMode || !backendAvailable || !db || !currentUser.uid) return;
    db.ref('users/' + currentUser.uid + '/roomStatus').set(status);
    db.ref('users/' + currentUser.uid + '/currentRoomId').set(roomId);
    db.ref('users/' + currentUser.uid + '/roomRound').set(round || 0);
 }
 
 function handleRegister() {
+  if (!requireBackend('注册账号')) return;
   const user = document.getElementById('auth-username').value.trim();
   const pass = document.getElementById('auth-password').value.trim();
   const msg = document.getElementById('auth-msg');
@@ -132,6 +193,7 @@ function handleRegister() {
 }
 
 function handleLogin() {
+  if (!requireBackend('账号登录')) return;
   const user = document.getElementById('auth-username').value.trim();
   const pass = document.getElementById('auth-password').value.trim();
   const msg = document.getElementById('auth-msg');
@@ -157,10 +219,11 @@ function handleLogin() {
 }
 
 function handleLogout() {
-  if (currentUser.uid) {
+  if (!isGuestMode && backendAvailable && db && currentUser.uid) {
       db.ref('users/' + currentUser.uid + '/online').set(false);
       updateMyPresence('idle', '', 0);
   }
+  isGuestMode = false;
   localStorage.removeItem('pulse_uid'); location.reload();
 }
 
@@ -186,6 +249,11 @@ function handleAvatarUpload(event) {
             ctx.drawImage(img, 0, 0, width, height);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
+            if (isGuestMode || !backendAvailable || !db) {
+                currentUser.avatar = dataUrl;
+                document.getElementById('hub-avatar').src = dataUrl;
+                return;
+            }
             db.ref('users/' + currentUser.uid + '/avatar').set(dataUrl).then(() => {
                 currentUser.avatar = dataUrl;
                 document.getElementById('hub-avatar').src = dataUrl;
@@ -209,7 +277,7 @@ function showHub() {
   document.getElementById('mode-overlay').style.display = 'none';
   document.getElementById('chat-modal').style.display = 'none';
   document.getElementById('hub-overlay').style.display = 'flex';
-  document.getElementById('hub-title').innerText = `[${currentUser.title}]`;
+  document.getElementById('hub-title').innerText = isGuestMode ? `[${currentUser.title} · 游客]` : `[${currentUser.title}]`;
   document.getElementById('hub-username').innerText = currentUser.username;
   document.getElementById('hub-uid').innerText = currentUser.uid;
   document.getElementById('hub-avatar').src = currentUser.avatar;
@@ -240,6 +308,12 @@ function showHub() {
 function updateCustomTitle() {
   const newTitle = document.getElementById('new-title-input').value.trim();
   if (!newTitle) return alert("称号不能为空！");
+  if (isGuestMode || !backendAvailable || !db) {
+    currentUser.title = newTitle;
+    document.getElementById('hub-title').innerText = `[${newTitle} · 游客]`;
+    document.getElementById('new-title-input').value = "";
+    return;
+  }
   db.ref('users/' + currentUser.uid + '/title').set(newTitle).then(function() {
     currentUser.title = newTitle; document.getElementById('hub-title').innerText = `[${newTitle}]`;
     document.getElementById('new-title-input').value = ""; alert("称号更新成功！");
@@ -248,6 +322,7 @@ function updateCustomTitle() {
 
 function updateSignatureTalent() {
     const sel = document.getElementById('signature-talent-select').value;
+    if (isGuestMode || !backendAvailable || !db) { currentUser.signatureTalent = sel; return; }
     db.ref('users/' + currentUser.uid + '/signatureTalent').set(sel).then(() => {
         currentUser.signatureTalent = sel;
     });
@@ -897,10 +972,14 @@ function selectMode(mode, cap) {
     gameState.p1.talent = null; gameState.p1.extraTalent = null; gameState.p1.pendingLoot = null; gameState.p1.reviveCharges = 0;
     gameState.status = 'playing'; gameState.p1.joined = true; gameState.p1.ready = true;
     if (gameVersion === 'beta') triggerPrayerPhase(false); else render(gameState);
-  } else { document.getElementById('room-setup').style.display = 'flex'; }
+  } else {
+    if (!requireBackend('联机对战')) { document.getElementById('game-container').style.display = 'none'; document.getElementById('mode-overlay').style.display = 'flex'; return; }
+    document.getElementById('room-setup').style.display = 'flex';
+  }
 }
 
 function createRoom(capacity, isBossMode = false) {
+  if (!requireBackend('创建联机房间')) return;
   const rid = Math.random().toString(36).substring(2, 7).toUpperCase();
   myRole = 'p1'; currentRoomId = rid; document.getElementById('room-setup').style.display = 'none';
   const dbPath = gameVersion === 'beta' ? "rooms_beta/" : "rooms_v2/";
@@ -916,6 +995,7 @@ function createRoom(capacity, isBossMode = false) {
 }
 
 function joinRoomWithId(explicitId) {
+  if (!requireBackend('加入联机房间')) return;
   const rid = (explicitId || "").toUpperCase().trim();
   if (rid.length !== 5) { alert("房间码为5位！"); return; }
   const dbPath = gameVersion === 'beta' ? "rooms_beta/" : "rooms_v2/";
