@@ -52,7 +52,19 @@ let currentAnnouncement = {
 };
 
 function isDeveloper() {
-  return !isGuestMode && currentUser && String(currentUser.uid) === DEVELOPER_UID;
+  if (isGuestMode) return false;
+  const liveUid = currentUser && currentUser.uid != null ? String(currentUser.uid).trim() : '';
+  const cachedUid = (localStorage.getItem('pulse_uid') || '').trim();
+  return liveUid === DEVELOPER_UID || cachedUid === DEVELOPER_UID;
+}
+
+function updateDeveloperControls() {
+  const editBtn = document.getElementById('developer-edit-announcement-btn');
+  if (!editBtn) return;
+  const allowed = isDeveloper();
+  editBtn.hidden = !allowed;
+  editBtn.style.display = allowed ? 'inline-flex' : 'none';
+  if (allowed) editBtn.title = '开发者 UID ' + DEVELOPER_UID + '：编辑全服公告';
 }
 
 function formatAnnouncementTime(timestamp) {
@@ -88,7 +100,7 @@ function renderDeveloperAnnouncement(data) {
     if (currentAnnouncement.updatedAt) parts.push('更新于 ' + formatAnnouncementTime(currentAnnouncement.updatedAt));
     metaEl.textContent = parts.length ? parts.join(' · ') : '开发者通讯终端';
   }
-  if (editBtn) editBtn.style.display = isDeveloper() ? 'inline-block' : 'none';
+  updateDeveloperControls();
 }
 
 function startDeveloperAnnouncementListener() {
@@ -389,6 +401,7 @@ function showHub() {
   // 同步开发者公告，并仅向开发者显示编辑入口
   startDeveloperAnnouncementListener();
   renderDeveloperAnnouncement(currentAnnouncement);
+  updateDeveloperControls();
 
   // 高中体验网络隐藏会暴露其他玩家昵称的全局社交入口
   const juniorOnly = isJuniorCommunity();

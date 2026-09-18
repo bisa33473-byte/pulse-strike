@@ -513,4 +513,85 @@ body {
   font-weight: normal;
   line-height: 1.4;
 }
-\n\n/* ==================== 开发者公告系统 ==================== */\n.developer-announcement {\n  background: rgba(0,0,0,0.3);\n  border: 1px solid var(--border);\n  border-radius: 12px;\n  padding: 15px;\n  text-align: left;\n}\n\n.developer-announcement-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: flex-start;\n  gap: 12px;\n  margin-bottom: 10px;\n}\n\n.developer-announcement-title {\n  color: var(--blue);\n  font-weight: bold;\n  font-size: 0.98em;\n}\n\n.developer-announcement-meta {\n  color: #8b949e;\n  font-size: 0.75em;\n  margin-top: 4px;\n}\n\n.developer-announcement-content {\n  max-height: 170px;\n  overflow-y: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n  color: #c9d1d9;\n  font-size: 0.86em;\n  line-height: 1.65;\n  padding-right: 6px;\n}\n\n.developer-edit-btn {\n  flex-shrink: 0;\n  background: rgba(57,197,187,0.12);\n  color: var(--cyan);\n  border: 1px solid var(--cyan);\n  border-radius: 8px;\n  padding: 7px 10px;\n  cursor: pointer;\n  font-weight: bold;\n}\n\n.developer-edit-btn:hover { filter: brightness(1.2); }\n\n.developer-editor-box { max-width: 520px; width: 95%; text-align: left; }\n.developer-editor-hint { color: #8b949e; font-size: 0.82em; line-height: 1.5; }\n.developer-editor-label { display: block; color: var(--cyan); font-size: 0.82em; margin: 12px 0 6px; font-weight: bold; }\n.developer-announcement-textarea {\n  width: 100%;\n  min-height: 220px;\n  resize: vertical;\n  box-sizing: border-box;\n  background: #0d1117;\n  border: 1px solid var(--border);\n  color: white;\n  border-radius: 8px;\n  padding: 12px;\n  font-family: inherit;\n  font-size: 0.95em;\n  line-height: 1.55;\n  outline: none;\n}\n.developer-announcement-textarea:focus { border-color: var(--cyan); box-shadow: 0 0 10px rgba(57,197,187,0.2); }\n.developer-editor-actions { display: flex; gap: 10px; margin-top: 16px; }\n.developer-editor-actions .setup-btn { flex: 1; }\n.developer-editor-msg { min-height: 20px; margin: 12px 0 0; color: var(--green); font-size: 0.82em; text-align: center; }\n\n@media (max-width: 520px) {\n  .developer-announcement-header { flex-direction: column; }\n  .developer-edit-btn { width: 100%; }\n}\n
+
+
+/* ==================== 开发者公告系统 ==================== */
+.developer-announcement {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 15px;
+  text-align: left;
+}
+
+.developer-announcement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.developer-announcement-title {
+  color: var(--blue);
+  font-weight: bold;
+  font-size: 0.98em;
+}
+
+.developer-announcement-meta {
+  color: #8b949e;
+  font-size: 0.75em;
+  margin-top: 4px;
+}
+
+.developer-announcement-content {
+  max-height: 170px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #c9d1d9;
+  font-size: 0.86em;
+  line-height: 1.65;
+  padding-right: 6px;
+}
+
+.developer-edit-btn {
+  flex-shrink: 0;
+  background: rgba(57,197,187,0.12);
+  color: var(--cyan);
+  border: 1px solid var(--cyan);
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.developer-edit-btn:hover { filter: brightness(1.2); }
+
+.developer-editor-box { max-width: 520px; width: 95%; text-align: left; }
+.developer-editor-hint { color: #8b949e; font-size: 0.82em; line-height: 1.5; }
+.developer-editor-label { display: block; color: var(--cyan); font-size: 0.82em; margin: 12px 0 6px; font-weight: bold; }
+.developer-announcement-textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  box-sizing: border-box;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  color: white;
+  border-radius: 8px;
+  padding: 12px;
+  font-family: inherit;
+  font-size: 0.95em;
+  line-height: 1.55;
+  outline: none;
+}
+.developer-announcement-textarea:focus { border-color: var(--cyan); box-shadow: 0 0 10px rgba(57,197,187,0.2); }
+.developer-editor-actions { display: flex; gap: 10px; margin-top: 16px; }
+.developer-editor-actions .setup-btn { flex: 1; }
+.developer-editor-msg { min-height: 20px; margin: 12px 0 0; color: var(--green); font-size: 0.82em; text-align: center; }
+
+@media (max-width: 520px) {
+  .developer-announcement-header { flex-direction: column; }
+  .developer-edit-btn { width: 100%; }
+}
