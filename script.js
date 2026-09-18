@@ -9,8 +9,9 @@ const firebaseConfig = {
 };
 
 
-// ==================== Firebase / App Check 安全初始化 ====================
-// 后端异常时不要让整份脚本崩溃；游客模式仍可进入本地 PvE 测试。
+// ==================== Firebase 安全初始化（手机排障版） ====================
+// App Check 暂时完全停用。这样可以单独判断手机端问题是否来自 reCAPTCHA / App Check。
+// Firebase 本身若加载失败，也不会让整份脚本直接崩溃；游客离线模式仍可继续使用。
 let db = null;
 let backendAvailable = false;
 let backendInitError = null;
@@ -19,26 +20,15 @@ try {
   if (typeof firebase === 'undefined') throw new Error('Firebase SDK 未加载');
   if (!firebase.apps || firebase.apps.length === 0) firebase.initializeApp(firebaseConfig);
 
-  try {
-    if (typeof firebase.appCheck === 'function') {
-      const appCheck = firebase.appCheck();
-      appCheck.activate(
-        '6LcBLcItAAAAAIpOr3mHkzstlxjnNR02CeeGr-cz',
-        true // 允许系统自动刷新安全 Token
-      );
-    } else {
-      console.warn('Firebase App Check SDK 未加载，将继续尝试数据库连接。');
-    }
-  } catch (appCheckErr) {
-    // App Check 本身失败时不阻断游客模式；普通在线功能仍可能因规则拒绝而失败。
-    console.error('App Check 初始化失败:', appCheckErr);
-  }
+  // App Check 暂时停用（诊断阶段）
+  // 恢复时再重新引入 firebase-app-check-compat.js 并在这里激活。
 
   db = firebase.database();
   backendAvailable = true;
+  console.log('[Pulse Strike] Firebase Database 初始化成功；App Check 当前已停用。');
 } catch (err) {
   backendInitError = err;
-  console.error('Firebase 后端初始化失败，已启用游客离线入口:', err);
+  console.error('Firebase 后端初始化失败，已保留游客离线入口:', err);
 }
 // =============================================================
 

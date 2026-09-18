@@ -8,9 +8,6 @@
     />
     <title>Pulse Strike - 异教徒之影 (v15.6 进阶版)</title>
     <link href="style.css" rel="stylesheet" type="text/css" />
-    <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-check-compat.js"></script>
   </head>
   <body>
     <div id="global-invite-alert" style="display: none">
@@ -1502,6 +1499,13 @@
       <button class="setup-btn host-btn" style="width: 100%; margin-top: 20px; padding: 12px; font-size:1.1em;" onclick="startCustomPve()">跃迁出击</button>
     </div>
   </div>
+
+  <!-- Firebase 延迟到页面主体加载完成后再加载，降低移动端首屏阻塞风险 -->
+  <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
+
+  <!-- App Check 暂时停用，用于定位手机端无法进入的问题 -->
+  <!-- <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-check-compat.js"></script> -->
 
   <script src="script.js"></script>
 </body>
