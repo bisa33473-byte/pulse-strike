@@ -39,6 +39,120 @@ let isRerollingGlobal = false;
 let selectedPocketIndex = -1;
 let currentLeaderboardTab = 'angel'; // 默认查看天使榜
 
+// ==================== 开发者权限与动态公告 ====================
+const DEVELOPER_UID = '355383';
+const ANNOUNCEMENT_PATH = 'site_config/announcement';
+let announcementListenerStarted = false;
+let currentAnnouncement = {
+  title: '开发者公告',
+  version: '',
+  content: 'Pulse Strike 已重新上线。',
+  updatedAt: 0,
+  author: ''
+};
+
+function isDeveloper() {
+  return !isGuestMode && currentUser && String(currentUser.uid) === DEVELOPER_UID;
+}
+
+function formatAnnouncementTime(timestamp) {
+  if (!timestamp) return '尚未发布动态公告';
+  try {
+    return new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
+  } catch (e) {
+    return '';
+  }
+}
+
+function renderDeveloperAnnouncement(data) {
+  if (data && typeof data === 'object') {
+    currentAnnouncement = {
+      title: data.title || '开发者公告',
+      version: data.version || '',
+      content: data.content || '暂无公告。',
+      updatedAt: Number(data.updatedAt) || 0,
+      author: data.author || ''
+    };
+  }
+
+  const titleEl = document.getElementById('announcement-title');
+  const metaEl = document.getElementById('announcement-meta');
+  const contentEl = document.getElementById('announcement-content');
+  const editBtn = document.getElementById('developer-edit-announcement-btn');
+
+  if (titleEl) titleEl.textContent = '📡 ' + (currentAnnouncement.title || '开发者公告');
+  if (contentEl) contentEl.textContent = currentAnnouncement.content || '暂无公告。';
+  if (metaEl) {
+    const parts = [];
+    if (currentAnnouncement.version) parts.push(currentAnnouncement.version);
+    if (currentAnnouncement.updatedAt) parts.push('更新于 ' + formatAnnouncementTime(currentAnnouncement.updatedAt));
+    metaEl.textContent = parts.length ? parts.join(' · ') : '开发者通讯终端';
+  }
+  if (editBtn) editBtn.style.display = isDeveloper() ? 'inline-block' : 'none';
+}
+
+function startDeveloperAnnouncementListener() {
+  renderDeveloperAnnouncement(currentAnnouncement);
+  if (isGuestMode || !backendAvailable || !db || announcementListenerStarted) return;
+  announcementListenerStarted = true;
+  db.ref(ANNOUNCEMENT_PATH).on('value', function(snap) {
+    const data = snap.val();
+    if (data) renderDeveloperAnnouncement(data);
+    else renderDeveloperAnnouncement(currentAnnouncement);
+  }, function(err) {
+    console.error('公告同步失败:', err);
+  });
+}
+
+function openDeveloperAnnouncementEditor() {
+  if (!isDeveloper()) return alert('仅开发者账号可编辑公告。');
+  const modal = document.getElementById('developer-announcement-modal');
+  if (!modal) return;
+  document.getElementById('developer-announcement-title-input').value = currentAnnouncement.title || '开发者公告';
+  document.getElementById('developer-announcement-version-input').value = currentAnnouncement.version || '';
+  document.getElementById('developer-announcement-content-input').value = currentAnnouncement.content || '';
+  const msg = document.getElementById('developer-announcement-editor-msg');
+  if (msg) msg.textContent = '';
+  modal.style.display = 'flex';
+}
+
+function closeDeveloperAnnouncementEditor() {
+  const modal = document.getElementById('developer-announcement-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function publishDeveloperAnnouncement() {
+  if (!isDeveloper()) return alert('仅开发者账号可发布公告。');
+  if (!backendAvailable || !db) return alert('当前无法连接服务器，公告未发布。');
+
+  const title = document.getElementById('developer-announcement-title-input').value.trim() || '开发者公告';
+  const version = document.getElementById('developer-announcement-version-input').value.trim();
+  const content = document.getElementById('developer-announcement-content-input').value.trim();
+  const msg = document.getElementById('developer-announcement-editor-msg');
+  if (!content) {
+    if (msg) { msg.style.color = 'var(--red)'; msg.textContent = '公告正文不能为空。'; }
+    return;
+  }
+
+  const payload = {
+    title: title,
+    version: version,
+    content: content,
+    updatedAt: firebase.database.ServerValue.TIMESTAMP,
+    author: currentUser.username || 'Developer',
+    authorUid: currentUser.uid
+  };
+
+  if (msg) { msg.style.color = 'var(--blue)'; msg.textContent = '正在发布...'; }
+  db.ref(ANNOUNCEMENT_PATH).set(payload).then(function() {
+    if (msg) { msg.style.color = 'var(--green)'; msg.textContent = '公告发布成功。'; }
+    setTimeout(closeDeveloperAnnouncementEditor, 450);
+  }).catch(function(err) {
+    console.error('公告发布失败:', err);
+    if (msg) { msg.style.color = 'var(--red)'; msg.textContent = '发布失败，请检查网络后重试。'; }
+  });
+}
+
 // ==================== 用户认证与缓存 ====================
 let currentUser = { uid: "", username: "", title: "初阶特工", avatar: "", signatureTalent: "", community: "", stats: { total: 0, wins: 0 }, factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} }, friends: {} };
 
@@ -271,6 +385,10 @@ function showHub() {
   document.getElementById('hub-username').innerText = currentUser.username;
   document.getElementById('hub-uid').innerText = currentUser.uid;
   document.getElementById('hub-avatar').src = currentUser.avatar;
+
+  // 同步开发者公告，并仅向开发者显示编辑入口
+  startDeveloperAnnouncementListener();
+  renderDeveloperAnnouncement(currentAnnouncement);
 
   // 高中体验网络隐藏会暴露其他玩家昵称的全局社交入口
   const juniorOnly = isJuniorCommunity();

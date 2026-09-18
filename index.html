@@ -242,22 +242,15 @@
               </button>
             </div>
 
-            <div id="changelog-module" style="grid-column: 1/-1; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 15px; text-align: left;">
-              <div style="color: var(--blue); font-weight: bold; font-size: 0.95em; margin-bottom: 10px;">🛠️ 系统更新日志 (v15.8 深渊领主)</div>
-              <div class="rules-body" style="max-height: 140px; overflow-y: auto; font-size: 0.85em; padding-right: 8px;">
-                <p><strong>[全新模式] 深渊领主 (1v3 非对称对抗)：</strong></p>
-                <ul>
-                  <li>首个非对称玩法上线！1位Boss对战3位讨伐特工。</li>
-                  <li><strong>领主特权</strong>：拥有 2.5 倍血量与 1.5 倍弹药，阵亡时自带一次【满状态狂暴重生】。</li>
-                  <li><strong>双核机缘</strong>：Boss可同时装备【机制】与【数值】双机缘！新增两款Boss专属强力数值专武。</li>
-                </ul>
-                <p><strong>[系统拓展] 演练沙盒与AI觉醒：</strong></p>
-                <ul>
-                  <li>单机模式全面升级为【沙盒引擎】，玩家现可自由为所有人机指派特定机缘，方便战术流派演练。</li>
-                  <li>多人联机大厅开放【补充人机】功能，人数不足亦可直接发车。</li>
-                  <li><strong>AI 仇恨系统重构</strong>：去除了旧版对玩家的死仇锁定，AI 之间也会进行残酷内耗博弈；在 Boss 战中 AI 将具备高智能的阵营寻敌逻辑。</li>
-                </ul>
+            <div id="changelog-module" class="developer-announcement" style="grid-column: 1/-1;">
+              <div class="developer-announcement-header">
+                <div>
+                  <div id="announcement-title" class="developer-announcement-title">📡 开发者公告</div>
+                  <div id="announcement-meta" class="developer-announcement-meta">正在同步最新公告...</div>
+                </div>
+                <button id="developer-edit-announcement-btn" class="developer-edit-btn" style="display:none" onclick="openDeveloperAnnouncementEditor()">🛠 编辑公告</button>
               </div>
+              <div id="announcement-content" class="developer-announcement-content">Pulse Strike 已重新上线。</div>
             </div>
 
             <button
@@ -545,6 +538,24 @@
         >
           关闭
         </button>
+      </div>
+    </div>
+
+    <div id="developer-announcement-modal" class="fixed-overlay" style="display: none" onclick="closeDeveloperAnnouncementEditor()">
+      <div class="modal-content developer-editor-box" onclick="event.stopPropagation()">
+        <h2 style="color: var(--cyan); margin-top: 0">🛠 开发者公告终端</h2>
+        <p class="developer-editor-hint">仅开发者 UID 355383 可在游戏内发布公告。保存后所有在线玩家会自动看到最新版。</p>
+        <label class="developer-editor-label" for="developer-announcement-title-input">公告标题</label>
+        <input id="developer-announcement-title-input" class="cyber-input" type="text" maxlength="40" placeholder="例如：开发者公告" />
+        <label class="developer-editor-label" for="developer-announcement-version-input">版本 / 标签</label>
+        <input id="developer-announcement-version-input" class="cyber-input" type="text" maxlength="30" placeholder="例如：v16.0 · 移动端修复" />
+        <label class="developer-editor-label" for="developer-announcement-content-input">公告正文</label>
+        <textarea id="developer-announcement-content-input" class="developer-announcement-textarea" maxlength="1200" placeholder="输入公告或最近更新内容... 可换行"></textarea>
+        <div class="developer-editor-actions">
+          <button class="setup-btn host-btn" onclick="publishDeveloperAnnouncement()">发布公告</button>
+          <button class="setup-btn" onclick="closeDeveloperAnnouncementEditor()">取消</button>
+        </div>
+        <p id="developer-announcement-editor-msg" class="developer-editor-msg"></p>
       </div>
     </div>
 
