@@ -422,3 +422,55 @@ body {
   #prayer-options-container button { padding: 12px; flex-direction: row; justify-content: flex-start; text-align: left; }
   #prayer-options-container button span:first-child { margin-bottom: 0; margin-right: 15px; }
 }
+
+/* ==================== 关系网络身份选择 ==================== */
+#community-overlay {
+  z-index: 5000;
+}
+
+.community-select-box {
+  max-width: 520px;
+}
+
+.community-hint {
+  color: #8b949e;
+  font-size: 0.9em;
+  line-height: 1.6;
+  margin: 0 0 20px 0;
+}
+
+.community-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 16px 18px;
+}
+
+.community-btn.junior {
+  background: #1f6feb;
+}
+
+.community-btn.senior {
+  background: #238636;
+}
+
+.community-btn-title {
+  font-size: 1.05em;
+  font-weight: bold;
+}
+
+.community-btn small {
+  font-size: 0.75em;
+  font-weight: normal;
+  opacity: 0.85;
+  line-height: 1.4;
+}
+
+.community-warning {
+  color: var(--gold);
+  font-size: 0.78em;
+  line-height: 1.5;
+  margin: 15px 0 0 0;
+}

@@ -27,7 +27,7 @@ let selectedPocketIndex = -1;
 let currentLeaderboardTab = 'angel'; // 默认查看天使榜
 
 // ==================== 用户认证与缓存 ====================
-let currentUser = { uid: "", username: "", title: "初阶特工", avatar: "", signatureTalent: "", stats: { total: 0, wins: 0 }, factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} }, friends: {} };
+let currentUser = { uid: "", username: "", title: "初阶特工", avatar: "", signatureTalent: "", community: "", stats: { total: 0, wins: 0 }, factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} }, friends: {} };
 
 window.onload = function() {
   const cachedUid = localStorage.getItem('pulse_uid');
@@ -40,11 +40,55 @@ window.onload = function() {
         if (!currentUser.friends) currentUser.friends = {};
         if (!currentUser.title) currentUser.title = "初阶特工";
         if (!currentUser.avatar) currentUser.avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/><text x='50' y='50' font-size='40' text-anchor='middle' dy='.3em' fill='%23fff'>?</text></svg>";
-        setupPresence(); showHub();
+        enterAfterCommunityCheck();
       } else { localStorage.removeItem('pulse_uid'); }
     });
   }
 };
+
+// ==================== 初/高中关系网络隔离 ====================
+function isJuniorCommunity() {
+  return currentUser && currentUser.community === 'junior';
+}
+
+function enterAfterCommunityCheck() {
+  if (!currentUser || !currentUser.uid) return;
+  if (currentUser.community !== 'junior' && currentUser.community !== 'senior') {
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('hub-overlay').style.display = 'none';
+    document.getElementById('community-overlay').style.display = 'flex';
+    return;
+  }
+  document.getElementById('community-overlay').style.display = 'none';
+  setupPresence();
+  showHub();
+}
+
+function selectCommunity(community) {
+  if (!currentUser || !currentUser.uid) return;
+  if (currentUser.community === 'junior' || currentUser.community === 'senior') return;
+  if (community !== 'junior' && community !== 'senior') return;
+
+  const buttons = document.querySelectorAll('#community-overlay button');
+  buttons.forEach(btn => btn.disabled = true);
+
+  db.ref('users/' + currentUser.uid + '/community').set(community).then(function() {
+    currentUser.community = community;
+    document.getElementById('community-overlay').style.display = 'none';
+    setupPresence();
+    showHub();
+  }).catch(function(err) {
+    console.error('community save failed:', err);
+    alert('身份网络写入失败，请检查网络后重试。');
+    buttons.forEach(btn => btn.disabled = false);
+  });
+}
+
+function requireJuniorSocial() {
+  if (isJuniorCommunity()) return true;
+  alert('高中体验网络暂未开放好友、世界频道与排行榜。');
+  return false;
+}
 
 function setupPresence() {
   const connectedRef = db.ref(".info/connected");
@@ -81,7 +125,7 @@ function handleRegister() {
       const newUserObj = { uid: newUid, username: user, password: pass, title: "初阶特工", avatar: defaultAvatar, signatureTalent: "", stats: { total: 0, wins: 0 }, factions: { angel: {total:0, wins:0, history:{}}, demon: {total:0, wins:0, history:{}}, heretic: {total:0, wins:0, history:{}} }, online: true, roomStatus: 'idle' };
       db.ref('users/' + newUid).set(newUserObj).then(function() {
         currentUser = newUserObj; localStorage.setItem('pulse_uid', newUid);
-        setupPresence(); showHub();
+        enterAfterCommunityCheck();
       });
     }
   });
@@ -108,7 +152,7 @@ function handleLogin() {
         localStorage.setItem('pulse_uid', currentUser.uid); found = true;
       }
     });
-    if (found) { setupPresence(); showHub(); } else { msg.innerText = "密码错误！"; }
+    if (found) { enterAfterCommunityCheck(); } else { msg.innerText = "密码错误！"; }
   });
 }
 
@@ -170,6 +214,13 @@ function showHub() {
   document.getElementById('hub-uid').innerText = currentUser.uid;
   document.getElementById('hub-avatar').src = currentUser.avatar;
 
+  // 高中体验网络隐藏会暴露其他玩家昵称的全局社交入口
+  const juniorOnly = isJuniorCommunity();
+  ['hub-friends-btn', 'hub-chat-btn', 'hub-leaderboard-btn', 'lobby-direct-invite'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = juniorOnly ? '' : 'none';
+  });
+
   // 填充本命机缘下拉框
   const sigSelect = document.getElementById('signature-talent-select');
   sigSelect.innerHTML = '<option value="">-- 选择本命机缘 (可选) --</option>';
@@ -182,7 +233,7 @@ function showHub() {
       sigSelect.appendChild(opt);
   });
 
-  listenToFriendRequests();
+  if (isJuniorCommunity()) listenToFriendRequests();
   updateMyPresence('idle', '', 0);
 }
 
@@ -319,12 +370,14 @@ function addAiToRoom() {
 
 // ==================== 世界聊天系统 (终端广播) ====================
 function openGlobalChat() {
+    if (!requireJuniorSocial()) return;
     document.getElementById('hub-overlay').style.display = 'none';
     document.getElementById('chat-modal').style.display = 'flex';
     listenToGlobalChat();
 }
 
 function sendChatMessage() {
+    if (!requireJuniorSocial()) return;
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if(!text) return;
@@ -356,6 +409,7 @@ function sendChatMessage() {
 }
 
 function listenToGlobalChat() {
+    if (!isJuniorCommunity()) return;
     db.ref('global_chat').on('value', snap => {
         const list = document.getElementById('chat-list');
         list.innerHTML = "";
@@ -370,6 +424,9 @@ function listenToGlobalChat() {
             let lastTime = 0;
 
             messages.forEach(msg => {
+                const sender = allUsers[msg.uid];
+                if (!sender || sender.community !== 'junior') return;
+
                 // 3分钟断层时间线
                 if (msg.timestamp - lastTime > 180000) {
                     let dateStr = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -410,8 +467,9 @@ function listenToGlobalChat() {
 }
 
 function showProfile(uid) {
+    if (!requireJuniorSocial()) return;
     db.ref('users/' + uid).once('value', snap => {
-        const u = snap.val(); if(!u) return;
+        const u = snap.val(); if(!u || u.community !== 'junior') return;
         document.getElementById('profile-avatar').src = u.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
         document.getElementById('profile-name').innerText = u.username;
         document.getElementById('profile-title').innerText = `[${u.title || '特工'}]`;
@@ -435,20 +493,27 @@ function showProfile(uid) {
 }
 
 function sendFriendRequestExplicit(targetUid, targetName) {
-    db.ref('friend_requests/' + targetUid + '/' + currentUser.uid).set(currentUser.username).then(() => {
-        alert("申请已发送给 " + targetName + "！"); document.getElementById('profile-modal').style.display = 'none';
+    if (!requireJuniorSocial()) return;
+    db.ref('users/' + targetUid).once('value', snap => {
+      const target = snap.val();
+      if (!target || target.community !== 'junior') return alert('该玩家不在当前社交网络中。');
+      db.ref('friend_requests/' + targetUid + '/' + currentUser.uid).set(currentUser.username).then(() => {
+          alert("申请已发送给 " + targetName + "！"); document.getElementById('profile-modal').style.display = 'none';
+      });
     });
 }
 
 // ==================== 社交与好友状态追踪 ====================
-function openFriendsModal() { document.getElementById('friends-modal').style.display = 'flex'; renderFriendsList(); }
+function openFriendsModal() { if (!requireJuniorSocial()) return; document.getElementById('friends-modal').style.display = 'flex'; renderFriendsList(); }
 
 function sendFriendRequest() {
+  if (!requireJuniorSocial()) return;
   const targetUid = document.getElementById('add-friend-uid').value.trim();
   if (targetUid === currentUser.uid) return alert("不能添加自己！");
   if (targetUid.length !== 6) return alert("UID 是6位数字！");
   db.ref('users/' + targetUid).once('value', function(snap) {
     if (!snap.exists()) alert("找不到该特工。");
+    else if (snap.val().community !== 'junior') alert("该玩家不在当前社交网络中。");
     else {
       db.ref('friend_requests/' + targetUid + '/' + currentUser.uid).set(currentUser.username).then(function() {
         alert("申请已发送！"); document.getElementById('add-friend-uid').value = "";
@@ -458,33 +523,54 @@ function sendFriendRequest() {
 }
 
 function listenToFriendRequests() {
+  if (!isJuniorCommunity()) return;
   db.ref('friend_requests/' + currentUser.uid).on('value', function(snap) {
-    const data = snap.val(); const area = document.getElementById('friend-requests-area'); const list = document.getElementById('friend-requests-list');
+    const data = snap.val();
+    const area = document.getElementById('friend-requests-area');
+    const list = document.getElementById('friend-requests-list');
     list.innerHTML = "";
     if (!data) { area.style.display = 'none'; return; }
-    area.style.display = 'block'; const requestKeys = Object.keys(data);
-    for (let i = 0; i < requestKeys.length; i++) {
-      let rUid = requestKeys[i]; let rName = data[rUid];
-      const item = document.createElement('div');
-      item.style.cssText = "display:flex; justify-content:space-between; background:#21262d; padding:8px; margin-bottom:5px; border-radius:6px; align-items:center;";
-      item.innerHTML = `<span style="font-size:0.9em; color:#fff;">[${rUid}] <b>${rName}</b></span><button class="setup-btn host-btn" style="padding:5px 10px; font-size:0.8em;" onclick="acceptFriend('${rUid}', '${rName}')">同意</button>`;
-      list.appendChild(item);
-    }
+
+    db.ref('users').once('value', function(userSnap) {
+      const allUsers = userSnap.val() || {};
+      const requestKeys = Object.keys(data).filter(function(uid) {
+        return allUsers[uid] && allUsers[uid].community === 'junior';
+      });
+      if (requestKeys.length === 0) { area.style.display = 'none'; return; }
+
+      area.style.display = 'block';
+      for (let i = 0; i < requestKeys.length; i++) {
+        let rUid = requestKeys[i]; let rName = data[rUid];
+        const item = document.createElement('div');
+        item.style.cssText = "display:flex; justify-content:space-between; background:#21262d; padding:8px; margin-bottom:5px; border-radius:6px; align-items:center;";
+        item.innerHTML = `<span style="font-size:0.9em; color:#fff;">[${rUid}] <b>${rName}</b></span><button class="setup-btn host-btn" style="padding:5px 10px; font-size:0.8em;" onclick="acceptFriend('${rUid}', '${rName}')">同意</button>`;
+        list.appendChild(item);
+      }
+    });
   });
 }
 
 function acceptFriend(rUid, rName) {
-  let updates = {};
-  updates['users/' + currentUser.uid + '/friends/' + rUid] = rName;
-  updates['users/' + rUid + '/friends/' + currentUser.uid] = currentUser.username;
-  db.ref().update(updates).then(function() {
-    db.ref('friend_requests/' + currentUser.uid + '/' + rUid).remove();
-    if (!currentUser.friends) currentUser.friends = {};
-    currentUser.friends[rUid] = rName; renderFriendsList();
+  if (!requireJuniorSocial()) return;
+  db.ref('users/' + rUid).once('value', function(snap) {
+    const target = snap.val();
+    if (!target || target.community !== 'junior') {
+      db.ref('friend_requests/' + currentUser.uid + '/' + rUid).remove();
+      return alert('该申请来自其他关系网络，已忽略。');
+    }
+    let updates = {};
+    updates['users/' + currentUser.uid + '/friends/' + rUid] = rName;
+    updates['users/' + rUid + '/friends/' + currentUser.uid] = currentUser.username;
+    db.ref().update(updates).then(function() {
+      db.ref('friend_requests/' + currentUser.uid + '/' + rUid).remove();
+      if (!currentUser.friends) currentUser.friends = {};
+      currentUser.friends[rUid] = rName; renderFriendsList();
+    });
   });
 }
 
 function renderFriendsList() {
+  if (!isJuniorCommunity()) return;
   const fList = document.getElementById('friends-list');
   fList.innerHTML = "<div style='color:#8b949e; text-align:center; font-size:0.85em;'>正在连接全网...</div>";
   if (!currentUser.friends || Object.keys(currentUser.friends).length === 0) {
@@ -496,7 +582,8 @@ function renderFriendsList() {
     for (let i = 0; i < fKeys.length; i++) {
       let fUid = fKeys[i]; let fName = currentUser.friends[fUid];
       let fUser = allUsers[fUid];
-      let isOnline = fUser && fUser.online === true;
+      if (!fUser || fUser.community !== 'junior') continue;
+      let isOnline = fUser.online === true;
 
       let statusDot = "<span style='color:#8b949e;'>⚪ 离线</span>";
       let actionBtn = "";
@@ -606,11 +693,13 @@ function spectateRoom(rid) {
 
 // ==================== 排行榜 (三系阵营与优势机缘) ====================
 function openLeaderboardModal() {
+  if (!requireJuniorSocial()) return;
   document.getElementById('leaderboard-modal').style.display = 'flex';
   switchLeaderboardTab(currentLeaderboardTab);
 }
 
 function switchLeaderboardTab(faction) {
+    if (!isJuniorCommunity()) return;
     currentLeaderboardTab = faction;
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelector(`.tab-btn.${faction}`).classList.add('active');
@@ -624,6 +713,7 @@ function switchLeaderboardTab(faction) {
 
         for (let i = 0; i < uKeys.length; i++) {
             let uData = data[uKeys[i]];
+            if (uData.community !== 'junior') continue;
             if (uData.factions && uData.factions[faction] && uData.factions[faction].total > 0) {
                 let fStats = uData.factions[faction];
                 let rate = (fStats.wins / fStats.total) * 100;
@@ -2775,11 +2865,16 @@ function toggleRules(show) {
 }
 
 function sendFriendRequestFromProfile() {
+  if (!requireJuniorSocial()) return;
   const targetUid = document.getElementById('profile-uid').innerText.trim();
   if (!targetUid || targetUid === currentUser.uid) return;
-  db.ref('friend_requests/' + targetUid + '/' + currentUser.uid).set(currentUser.username).then(function() {
-    alert("好友申请已发送！");
-    document.getElementById('profile-modal').style.display = 'none';
+  db.ref('users/' + targetUid).once('value', function(snap) {
+    const target = snap.val();
+    if (!target || target.community !== 'junior') return alert('该玩家不在当前社交网络中。');
+    db.ref('friend_requests/' + targetUid + '/' + currentUser.uid).set(currentUser.username).then(function() {
+      alert("好友申请已发送！");
+      document.getElementById('profile-modal').style.display = 'none';
+    });
   });
 }
 

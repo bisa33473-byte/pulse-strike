@@ -75,6 +75,22 @@
       </div>
     </div>
 
+    <div id="community-overlay" style="display: none" class="fixed-overlay">
+      <div class="modal-content community-select-box">
+        <h2 style="color: var(--cyan); margin-top: 0;">🛰️ 选择关系网络</h2>
+        <p class="community-hint">这是一次性身份选择，用于避免初中与高中同学在大厅社交功能中互相看到昵称。</p>
+        <button class="mode-btn community-btn junior" onclick="selectCommunity('junior')">
+          <span class="community-btn-title">初中同学</span>
+          <small>完整特工网络：好友、世界频道、排行榜与联机功能</small>
+        </button>
+        <button class="mode-btn community-btn senior" onclick="selectCommunity('senior')">
+          <span class="community-btn-title">高中同学</span>
+          <small>精简体验网络：保留开房联机、房间聊天与游戏内容</small>
+        </button>
+        <p class="community-warning">请选择真实身份；当前版本选择后不会在游戏内提供修改入口。</p>
+      </div>
+    </div>
+
     <div id="hub-overlay" style="display: none" class="fixed-overlay">
       <div
         id="hub-box"
@@ -206,6 +222,7 @@
                 ⚔️ 进入战区 (开始游戏)
               </button>
               <button
+                id="hub-friends-btn"
                 class="mode-btn"
                 style="background: #1f6feb; margin: 0"
                 onclick="openFriendsModal()"
@@ -213,6 +230,7 @@
                 👥 特工通讯 (好友)
               </button>
               <button
+                id="hub-chat-btn"
                 class="mode-btn"
                 style="background: #2ea043; margin: 0; grid-column: 1/-1"
                 onclick="openGlobalChat()"
@@ -240,6 +258,7 @@
             </div>
 
             <button
+              id="hub-leaderboard-btn"
               class="mode-btn"
               style="background: var(--purple); margin: 0"
               onclick="openLeaderboardModal()"
@@ -802,6 +821,7 @@
             cursor: pointer;
             text-decoration: underline;
           "
+          id="lobby-direct-invite"
           onclick="openFriendsModal()"
           >[直邀好友]</span
         >
