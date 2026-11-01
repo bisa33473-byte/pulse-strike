@@ -3319,3 +3319,50 @@ function showTalentCodex() {
   };
 })();
 
+
+// Compare displayed snapshots, not render counts: repeated network updates do not replay FX.
+(() => {
+  const original=render;
+  let previous=null, epoch=-1, room='', lastRound=0;
+  function effect(parent, cls, text, duration=1200) {
+    const el=document.createElement('span');el.className=cls;
+    if(text) el.textContent=text;
+    parent.append(el);setTimeout(()=>el.remove(),duration);return el;
+  }
+  render=function(data){
+    original(data);if(!data)return;
+    const fresh=epoch!==battleSessionEpoch || room!==currentRoomId || data.round<lastRound || data.status==='waiting';
+    if(fresh)previous=null;
+    const next={};
+    for(let i=1;i<=data.config.capacity;i++){
+      const key=`p${i}`,p=data[key];if(!p)continue;
+      const ammoType=hasTalent(p,'m_d5')?'poison':hasTalent(p,'m_h7')?'rhythm':'ammo';
+      next[key]={hp:p.hp,maxHp:p.maxHp,ammo:p[ammoType]||0,ammoType,shield:p.shield};
+      const old=previous?.[key],card=document.getElementById(key+'-card');
+      if(!old||!card)continue;
+      const now=next[key];
+      if(now.hp<old.hp){
+        const bar=document.getElementById(key+'-hp-visual');
+        if(bar&&now.maxHp>0){
+          bar.querySelectorAll('.hp-echo').forEach(el=>el.remove());
+          const echo=effect(bar,'hp-echo','');
+          const start=Math.max(0,Math.min(100,now.hp/now.maxHp*100));
+          const end=Math.max(start,Math.min(100,old.hp/now.maxHp*100));
+          echo.style.left=start+'%';echo.style.width=(end-start)+'%';
+        }
+        effect(card,'combat-slash','',500);effect(card,'resource-delta','−'+(old.hp-now.hp));
+      }
+      for(const type of ['ammo','shield']){
+        if(type==='ammo'&&old.ammoType!==now.ammoType)continue;
+        if(now[type]>old[type]){
+          const bar=document.getElementById(key+'-'+type+'-visual');
+          if(bar){bar.classList.remove('resource-pop');void bar.offsetWidth;bar.classList.add('resource-pop');}
+          effect(card,'resource-delta '+type,'+'+(now[type]-old[type]));
+        }
+      }
+    }
+    previous=next;epoch=battleSessionEpoch;room=currentRoomId;lastRound=data.round;
+  };
+})();
+
+
