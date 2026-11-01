@@ -25,7 +25,7 @@ try {
 
   db = firebase.database();
   backendAvailable = true;
-  console.log('[Pulse Strike] Firebase Database 初始化成功；App Check 当前已停用。');
+  console.log('[圣魔机缘] Firebase Database 初始化成功；App Check 当前已停用。');
 } catch (err) {
   backendInitError = err;
   console.error('Firebase 后端初始化失败，已保留游客离线入口:', err);
@@ -46,7 +46,7 @@ let announcementListenerStarted = false;
 let currentAnnouncement = {
   title: '开发者公告',
   version: '',
-  content: 'Pulse Strike 已重新上线。',
+  content: '圣魔机缘 已重新上线。',
   updatedAt: 0,
   author: ''
 };
