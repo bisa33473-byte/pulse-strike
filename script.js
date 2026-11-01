@@ -1206,6 +1206,7 @@ function listenToRoomChat(rid) {
 
 function setupRoomListener(rid) {
   roomRef.on('value', function(snap) {
+    if (exitInProgress) return;
     let data = snap.val(); if (!data) { alert("房间解散。"); location.reload(); return; }
     gameState = data;
     if (myRole !== 'spectator' && data.status === 'playing') updateMyPresence('playing', currentRoomId, data.round);
@@ -1266,23 +1267,37 @@ function updateLobbyPlayer(playerId, pData, isActive) {
 }
 
 // ==================== 退出与认输机制 ====================
-function exitGame() { 
-  if (roomRef && myRole) {
-    if (myRole === 'spectator') { location.reload(); return; }
-    let msg = myRole === 'p1' && gameState.status === 'waiting' ? "你是房主，大厅阶段离开将解散房间。" : "确定退出战区？退出后你将被系统强行抹杀，且其余特工将继续游戏！";
-    if (confirm(msg)) {
-      if (myRole === 'p1' && gameState.status === 'waiting') {
-          db.ref(`rooms_chat/${currentRoomId}`).remove(); 
-          roomRef.remove().then(function(){location.reload();}); 
+let battleSessionEpoch = 0;
+let exitInProgress = false;
+async function exitGame() {
+  if (exitInProgress) return;
+  const hostWaiting = roomRef && myRole === 'p1' && gameState?.status === 'waiting';
+  const message = hostWaiting ? '确认退出？你是房主，退出将解散等待中的房间。' : '确认退出当前战局并返回模式选择？进行中的对局将放弃，登录状态会保留。';
+  if (!confirm(message)) return;
+  exitInProgress = true;
+  const oldRoom = roomRef, oldId = currentRoomId, oldRole = myRole;
+  try {
+    if (oldRoom && oldRole && oldRole !== 'spectator') {
+      if (hostWaiting) {
+        await oldRoom.remove();
+        if (db) db.ref('rooms_chat/' + oldId).remove().catch(console.error);
       } else {
-         if (gameState.status === 'playing') {
-             roomRef.child(myRole).update({ joined: false, move: 'quit' }).then(function(){location.reload();});
-         } else {
-             roomRef.child(myRole).update({ joined: false, ready: false }).then(function(){location.reload();});
-         }
+        await oldRoom.child(oldRole).update(gameState?.status === 'playing' ? {joined:false,move:'quit'} : {joined:false,ready:false});
       }
     }
-  } else location.reload(); 
+    battleSessionEpoch++;
+    if (oldRoom) oldRoom.off();
+    if (db && oldId) db.ref('rooms_chat/' + oldId).off();
+    roomRef=null; currentRoomId=''; myRole=null; gameState=null; isPvE=false; isProcessing=false; isRerollingGlobal=false;
+    document.querySelectorAll('.fixed-overlay').forEach(el=>el.style.display='none');
+    ['game-container','waiting-room','rematch-panel','room-chat-panel','talent-overlay','prayer-overlay'].forEach(id=>{const el=document.getElementById(id);if(el) el.style.display='none';});
+    document.querySelectorAll('input[name="atk-target"]').forEach(el=>el.checked=false);
+    updateMyPresence('idle','',0);
+    openGameSelect();
+  } catch(error) {
+    console.error('退出失败',error);
+    alert('暂时无法退出房间，请检查网络后重试。');
+  } finally { exitInProgress=false; }
 }
 
 function handleSurrender() {
@@ -1656,11 +1671,13 @@ function checkRoundStart() {
 
   if (allMoved && aliveKeys.length > 0 && myRole === aliveKeys[0]) {
     if (isProcessing) return; isProcessing = true;
+    const scheduledEpoch = battleSessionEpoch;
     setTimeout(function() {
+      if (scheduledEpoch !== battleSessionEpoch || !gameState) return;
       if (isPvE) { processRound(); isProcessing = false; return; }
       roomRef.once('value', function(snap) {
         const currentData = snap.val();
-        if (currentData) {
+        if (currentData && scheduledEpoch === battleSessionEpoch) {
           let stillAllMoved = true;
           for (let i = 0; i < aliveKeys.length; i++) { if (currentData[aliveKeys[i]].move === "") { stillAllMoved = false; break; } }
           if (stillAllMoved) { gameState = currentData; processRound(); }
@@ -2836,7 +2853,7 @@ function updateActionPanel(data) {
   const shootControls = document.getElementById('shoot-controls'); const fatalShootBtns = document.getElementById('fatal-shoot-btns');
 
     if (data[myRole]) {
-       let htmlStr = `<span>动作强度:</span>`; let fatalStr = ``;
+       let htmlStr = `<span>攻击强度:</span>`; let fatalStr = ``;
        let maxVal = hasTalent(data[myRole], 'm_d5') ? 5 : (hasTalent(data[myRole], 'm_h7') ? 8 : data[myRole].maxAmmo);
        for (let i = 1; i <= maxVal; i++) {
           htmlStr += `<button class="s-btn" id="btn-s${i}" onclick="handleInput('shoot', ${i})">${i}</button>`;
@@ -3273,3 +3290,32 @@ function showTalentCodex() {
   const originalRender=render;
   render=function(data){originalRender(data);refresh(data);};
 })();
+
+// Readable round report, without changing the shared battle log format.
+(() => {
+  const original = render;
+  let lastLog = '';
+  render = function(data) {
+    original(data);
+    if (!data) return;
+    const area = document.getElementById('battle-log-inner');
+    const header = area.querySelector('.action-header');
+    if (header) {
+      const text = header.textContent.replace(/^[【\[]|[】\]]$/g,'');
+      header.replaceChildren();
+      text.split('|').forEach(action=>{
+        const item=document.createElement('span');item.className='round-action';item.textContent=action.trim();header.append(item);
+      });
+    }
+    const body=area.querySelector('.result-body');
+    if(body){
+      const parts=body.innerHTML.split(/<br\s*\/?\s*>/i);
+      body.replaceChildren();
+      parts.filter(part=>part.trim()).forEach(part=>{const row=document.createElement('div');row.className='round-event';row.innerHTML=part;body.append(row);});
+    }
+    const title=document.createElement('div');title.className='report-heading';
+    title.textContent=header ? '回合战报 · 行动与结算' : '战场通讯';area.prepend(title);
+    if(lastLog!==data.log){area.classList.remove('report-enter');void area.offsetWidth;area.classList.add('report-enter');lastLog=data.log;}
+  };
+})();
+

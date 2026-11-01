@@ -669,3 +669,26 @@ body {
 @media(max-width:980px){#command-dock{grid-template-columns:320px minmax(0,1fr)}#command-detail{grid-column:1/-1;border-left:0!important;border-top:1px solid #293b4b;display:grid;grid-template-columns:1fr 1fr;gap:6px 20px}#command-detail .section-kicker,#command-detail>small{grid-column:1/-1}#command-symbol{display:none}#command-name{margin:0}#command-description{grid-column:1;grid-row:3/5;min-height:0}#command-target{grid-column:2;grid-row:2/4;margin:0}#command-confirm{grid-column:2;grid-row:4}#game-container .player-label{grid-template-columns:36px 1fr}#game-container .card-avatar{width:36px;height:36px;grid-row:1/3}#game-container .turn-status{grid-column:2}}
 @media(max-width:620px){body:has(#game-container[style*="block"]){padding:8px}#game-container{padding:12px;border-radius:13px}#game-container .logo-text{font-size:14px;letter-spacing:1px}#game-container .header-right{gap:5px}#game-container #round-badge{padding:6px;font-size:10px}#game-container #exit-game-btn,#game-container #surrender-game-btn{margin:0;padding:5px;font-size:10px}#game-container .stats-board,#game-container .stats-board[data-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#game-container .player-card{padding:10px}#game-container .player-label{font-size:10px;gap:5px;grid-template-columns:30px 1fr}#game-container .card-avatar{width:30px;height:30px}#game-container .active-talent{font-size:10px;padding:4px}#game-container .turn-status{font-size:9px}#command-dock{grid-template-columns:1fr}#command-dock>section{padding:14px}#command-dock>section+section{border-left:0;border-top:1px solid #293b4b}#command-wheel{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;width:auto;height:auto;background:none}.wheel-core{display:none}#command-wheel .wheel-action{position:static;width:100%;height:66px}#command-detail{display:flex}#command-description{min-height:0}#command-confirm{margin-top:8px}.command-heading>span{font-size:9px;max-width:110px;line-height:1.7}.command-heading h2{font-size:16px}#command-dock .tactical-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.locked-target::after{bottom:3px;right:7px;font-size:9px}}
 @media(prefers-reduced-motion:reduce){#game-container *{animation:none!important;transition:none!important}}
+
+/* Round report: let short reports breathe; scroll only lengthy rounds. */
+#game-container #battle-log-area {display:block;max-height:340px;padding:19px 22px;margin:20px 0;border:1px solid #293c4d;border-left:3px solid #d7b677;background:#0d1722;text-align:left;line-height:1.8}
+#battle-log-inner{width:100%}
+.report-heading{font-size:11px;color:#9bb4c7;letter-spacing:2px;margin-bottom:12px}
+#game-container .action-header{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:12px}
+.round-action{padding:5px 12px;background:#203343;border:1px solid #345265;border-radius:6px;color:#d8e8f3}
+#game-container .result-body{color:#c7d8e6;font-weight:400;font-size:13px;line-height:1.9}
+.round-event{padding:9px 12px;margin:5px 0;background:#152331;border-left:2px solid #47657c;border-radius:0 5px 5px 0;overflow-wrap:anywhere}
+#game-header{position:relative;overflow:hidden}
+#game-header::after{content:'';position:absolute;bottom:0;left:0;width:20%;height:1px;background:linear-gradient(90deg,transparent,#7cddcf,transparent);animation:signal-flow 9s linear infinite;pointer-events:none}
+.wheel-core::after{content:'';position:absolute;inset:-7px;border:1px solid transparent;border-top-color:#6ac6b580;border-bottom-color:#6ac6b530;border-radius:50%;animation:orbit-slow 18s linear infinite;pointer-events:none}
+#command-confirm:not(:disabled){transition:filter .2s,box-shadow .2s,transform .2s;box-shadow:0 3px 14px #6cdec21a}
+#command-confirm:not(:disabled):hover{filter:brightness(1.08);box-shadow:0 4px 20px #6cdec236;transform:translateY(-1px)}
+#command-confirm:not(:disabled):active{transform:translateY(1px)}
+.resource-visual i{transition:background-color .35s,width .4s}
+.report-enter{animation:report-arrive .3s ease-out}
+@keyframes signal-flow{from{transform:translateX(-100%)}to{transform:translateX(600%)}}
+@keyframes orbit-slow{to{transform:rotate(360deg)}}
+@keyframes report-arrive{from{opacity:.5;transform:translateY(5px)}to{opacity:1;transform:none}}
+@media(max-width:620px){#game-container #battle-log-area{padding:13px;max-height:360px}.round-action{padding:4px 8px}.round-event{padding:8px}.report-heading{font-size:10px}}
+@media(prefers-reduced-motion:reduce){#game-header::after,.wheel-core::after,.report-enter{animation:none!important}}
+
