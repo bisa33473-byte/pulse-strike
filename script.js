@@ -3257,7 +3257,7 @@ function showTalentCodex() {
     const [current,max]=value.textContent.split('/').map(Number);
     const ratio=max>0?Math.max(0,Math.min(1,current/max)):0;
     const label=kind==='hp'?'生命':kind==='shield'?'护盾':kind==='sanity'?'理智':byId(`${key}-ammo-label`).textContent;
-    bar.className=`resource-visual resource-${kind}`;
+    bar.classList.add('resource-visual',`resource-${kind}`);
     bar.setAttribute('role','img');bar.setAttribute('aria-label',`${label} ${current}/${max}`);
     if(kind==='hp'||kind==='sanity') {
       if(!bar.firstChild) bar.innerHTML='<i></i>';
@@ -3265,7 +3265,8 @@ function showTalentCodex() {
       bar.classList.toggle('low-resource',ratio<=0.3);
     } else {
       const count=Math.min(16,Math.max(0,Math.ceil(max)||0));
-      bar.innerHTML=Array.from({length:count},(_,i)=>`<i class="${i<count*ratio?'filled':''}"></i>`).join('');
+      const markup=Array.from({length:count},(_,i)=>`<i class="${i<count*ratio?'filled':''}"></i>`).join('');
+      if(bar.dataset.slots!==markup){bar.innerHTML=markup;bar.dataset.slots=markup;}
       if(max>16) bar.title=`每格约 ${Math.round(max/16*10)/10} 点；准确数值见上方`;
     }
   }
@@ -3324,7 +3325,7 @@ function showTalentCodex() {
 (() => {
   const original=render;
   let previous=null, epoch=-1, room='', lastRound=0;
-  function effect(parent, cls, text, duration=1200) {
+  function effect(parent, cls, text, duration=1800) {
     const el=document.createElement('span');el.className=cls;
     if(text) el.textContent=text;
     parent.append(el);setTimeout(()=>el.remove(),duration);return el;
@@ -3350,14 +3351,14 @@ function showTalentCodex() {
           const end=Math.max(start,Math.min(100,old.hp/now.maxHp*100));
           echo.style.left=start+'%';echo.style.width=(end-start)+'%';
         }
-        effect(card,'combat-slash','',500);effect(card,'resource-delta','−'+(old.hp-now.hp));
+        effect(card,'combat-slash','',700);effect(card,'resource-delta','生命 −'+(old.hp-now.hp));
       }
       for(const type of ['ammo','shield']){
         if(type==='ammo'&&old.ammoType!==now.ammoType)continue;
         if(now[type]>old[type]){
           const bar=document.getElementById(key+'-'+type+'-visual');
           if(bar){bar.classList.remove('resource-pop');void bar.offsetWidth;bar.classList.add('resource-pop');}
-          effect(card,'resource-delta '+type,'+'+(now[type]-old[type]));
+          effect(card,'resource-delta '+type,(type==='shield'?'护盾 ':ammoType==='poison'?'鸩毒 ':ammoType==='rhythm'?'韵律 ':'弹药 ')+'+'+(now[type]-old[type]));
         }
       }
     }
@@ -3365,4 +3366,15 @@ function showTalentCodex() {
   };
 })();
 
+
+
+// Give each resource one explicit grid label (including the original ammo label ID).
+document.querySelectorAll('#stats-board .stat-item').forEach(row => {
+  const caption=document.createElement('span');caption.className='resource-caption';
+  Array.from(row.childNodes).forEach(node=>{
+    if(node.nodeType===1 && (node.classList.contains('val-text')||node.classList.contains('resource-visual')))return;
+    caption.append(node);
+  });
+  row.prepend(caption);
+});
 

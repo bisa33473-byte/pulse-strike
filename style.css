@@ -776,3 +776,55 @@ body:has(#game-container[style*="block"]) {padding:8px;min-height:100dvh}
 @media(max-height:620px){#game-container[style*="block"]{height:auto;min-height:calc(100dvh - 16px)}#game-container #battle-log-area{flex:none;max-height:130px}}
 @media(prefers-reduced-motion:reduce){.combat-slash,.resource-delta{display:none}.resource-pop,.resource-hp .hp-echo{animation:none!important}.resource-hp .hp-echo{display:none}}
 
+
+/* Compact arena: 2x2 player grid, bounded side report, controls directly below. */
+#game-container[style*="block"]{max-width:1200px;height:auto;min-height:0;max-height:none;gap:12px;padding:14px;align-self:flex-start}
+body:has(#game-container[style*="block"]){align-items:flex-start}
+#battle-overview{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:12px;align-items:stretch;min-width:0}
+#game-container .stats-board,#game-container .stats-board[data-count="2"],#game-container .stats-board[data-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start}
+#game-container .player-card{padding:10px 12px;min-height:0;overflow:hidden}
+#game-container .player-label{font-size:11px;margin-bottom:5px}
+#game-container .stat-item{display:grid;grid-template-columns:50px minmax(0,1fr) 48px;align-items:center;column-gap:5px;position:relative;margin:5px 0;font-size:10px;min-height:12px}
+#game-container .stat-item .val-text{grid-column:3;grid-row:1;font-size:11px;margin:0;float:none;text-align:right}
+#game-container .stat-item .resource-visual{grid-column:2;grid-row:1;height:6px;margin:0;min-width:0;gap:3px}
+#game-container .resource-ammo i{height:6px;max-width:14px}
+#game-container .resource-shield i{height:6px;max-width:21px}
+#game-container .resource-hp{height:6px}
+#game-container #battle-overview #battle-log-area{height:100%;max-height:300px;min-height:0;flex:none;margin:0;padding:12px;overflow:auto;font-size:11px;border-left-width:2px}
+#game-container #battle-overview:has(.stats-board[data-count="2"]) #battle-log-area{max-height:170px}
+#game-container .report-heading{font-size:10px;letter-spacing:1px;margin-bottom:7px}
+#game-container .round-action{font-size:10px;padding:3px 6px}
+#game-container .round-event{font-size:11px;padding:5px 7px;margin:4px 0;line-height:1.65}
+#game-container .win-msg{font-size:14px;margin-top:8px!important}
+#game-container #command-dock{grid-template-columns:268px minmax(0,1fr) 230px}
+/* FX live independently of meter content. Never hide useful numbers for reduced motion. */
+#game-container .resource-hp .hp-echo{z-index:3;background:#fff9ee;box-shadow:0 0 5px #ffffff80;animation:damage-afterimage 1.7s ease-out forwards}
+#game-container .combat-slash::after{height:3px;box-shadow:0 0 12px #ff8291;animation:combat-cut .65s ease-out both}
+#game-container .resource-pop{animation:resource-charge 1.25s ease-out}
+#game-container .resource-delta{top:43%;right:9px;line-height:1.4;font-size:13px;background:#341d29e8;border:1px solid #ff819c80;border-radius:5px;padding:3px 7px;text-shadow:0 1px 3px #000;animation:combat-number 1.7s ease-out forwards}
+#game-container .resource-delta.ammo{top:62%;background:#352b17ed;border-color:#d7b97480;color:#ffe3a4}
+#game-container .resource-delta.shield{top:80%;background:#152b40ed;border-color:#89baff80;color:#c2e3ff}
+@keyframes damage-afterimage{0%,45%{opacity:1;transform:scaleX(1)}100%{opacity:0;transform:scaleX(.1);transform-origin:left}}
+@keyframes combat-number{0%{opacity:0;transform:translateY(5px)}12%,70%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-9px)}}
+@media(max-width:980px){#battle-overview{grid-template-columns:minmax(0,1fr) 220px}#game-container .stat-item{grid-template-columns:40px minmax(0,1fr) 39px;font-size:9px}#game-container .stat-item .val-text{font-size:10px}}
+@media(max-width:800px){
+ #game-container[style*="block"]{padding:9px;gap:8px}
+ #battle-overview{grid-template-columns:1fr;gap:7px}
+ #game-container .player-card{padding:8px}
+ #game-container .player-label{font-size:10px}
+ #game-container .stat-item{grid-template-columns:30px minmax(0,1fr) 33px;column-gap:3px;font-size:9px;margin:4px 0}
+ #game-container .stat-item .val-text{font-size:9px}
+ #game-container .stat-item .resource-visual{height:5px;gap:2px}
+ #game-container .resource-ammo i,#game-container .resource-shield i{height:5px}
+ #game-container #battle-overview #battle-log-area,#game-container #battle-overview:has(.stats-board[data-count="2"]) #battle-log-area{height:auto;max-height:100px;min-height:45px;padding:7px 9px}
+ #game-container .report-heading{margin-bottom:4px;font-size:9px}
+ #game-container .round-event{padding:3px 6px;font-size:10px}
+ #game-container #command-dock{grid-template-columns:1fr 1fr}
+ #game-container .resource-delta{font-size:11px;padding:2px 4px}
+}
+@media(prefers-reduced-motion:reduce){
+ #game-container .resource-delta{display:block!important;animation:none!important}
+ #game-container .resource-hp .hp-echo{display:block!important;animation:none!important}
+ #game-container .combat-slash{display:none!important}
+}
+#game-container .resource-caption{grid-column:1;grid-row:1;white-space:nowrap}

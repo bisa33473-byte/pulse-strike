@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>Pulse Strike - 异教徒之影 (v15.6 进阶版)</title>
-    <link href="style.css" rel="stylesheet" type="text/css" />
+    <link href="style.css?v=20261101-layout3" rel="stylesheet" type="text/css" />
   </head>
   <body>
     <div id="global-invite-alert" style="display: none">
@@ -1102,6 +1102,7 @@
         </div>
       </div>
 
+      <div id="battle-overview">
       <div class="stats-board" id="stats-board">
         <div class="player-card" id="p1-card">
           <div class="player-label" id="p1-label">
@@ -1226,7 +1227,8 @@
       </div>
 
       <div id="battle-log-area">
-        <div id="battle-log-inner">准备就绪，请出招！</div>
+        <div id="battle-log-inner" role="log" aria-live="polite">准备就绪，请出招！</div>
+      </div>
       </div>
 
       <div
@@ -1524,6 +1526,6 @@
   <!-- App Check 暂时停用，用于定位手机端无法进入的问题 -->
   <!-- <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-check-compat.js"></script> -->
 
-  <script src="script.js"></script>
+  <script src="script.js?v=20261101-layout3"></script>
 </body>
 </html>
