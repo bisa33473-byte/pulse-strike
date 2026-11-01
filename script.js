@@ -2781,7 +2781,7 @@ function render(data) {
 // 计时只发生在本地，不写入房间数据：各端时钟与网络差异不会打乱战局，
 // 提前结束的一方也只能先锁定指令，必须等所有人出招后才会结算。
 const BRIEFING_DURATION_MS = 10000;
-const briefingState = { active: false, done: false, raf: 0, timer: 0, closeTimer: 0, startedAt: 0 };
+const briefingState = { active: false, done: false, paused: false, raf: 0, timer: 0, closeTimer: 0, startedAt: 0, remaining: 0, talents: {} };
 
 function briefingEscape(value) {
   return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
@@ -2820,12 +2820,15 @@ function briefingTalentBlock(player, faction) {
   const costLine = lines.filter(function (line) { return /^代价/.test(line); })[0] || '';
   const effect = lines.filter(function (line) { return line !== costLine; }).join(' ');
   const fullDesc = lines.join(' · ');
-  return '<div class="bc-talent" title="' + briefingEscape(fullDesc) + '">' +
+  return '<div class="bc-talent" role="button" tabindex="0"' +
+    ' aria-label="查看 ' + briefingEscape(player.username || '该特工') + ' 的机缘详情"' +
+    ' title="' + briefingEscape(fullDesc) + '">' +
     '<div class="bc-talent-head"><span class="bc-talent-icon">' + faction.icon + '</span>' +
     '<span class="bc-talent-name">' + briefingEscape(talent.name) + '</span>' +
     '<span class="bc-talent-kind">' + briefingEscape(talent.category || '机制') + ' · ' + faction.label + '</span></div>' +
     '<p class="bc-talent-effect">' + briefingEscape(effect) + '</p>' +
     (costLine ? '<p class="bc-talent-cost">' + briefingEscape(costLine) + '</p>' : '') +
+    '<span class="bc-talent-more">查看详情 ›</span>' +
     '</div>';
 }
 
@@ -2884,10 +2887,21 @@ function openBriefing(data) {
   const keys = ['p1', 'p2', 'p3', 'p4'].slice(0, Number(data.config && data.config.capacity) || 2);
   const seats = keys.filter(function (key) { return data[key]; });
   const grid = document.getElementById('briefing-grid');
+  briefingState.talents = {};
+  seats.forEach(function (key) {
+    const seat = data[key] || {};
+    briefingState.talents[key] = seat.talent || seat.extraTalent || null;
+  });
   if (grid) {
     grid.dataset.count = String(seats.length || 2);
     grid.innerHTML = seats.map(function (key) { return briefingCardHtml(key, data[key], data); }).join('');
   }
+  briefingState.paused = false;
+  briefingState.remaining = 0;
+  overlay.classList.remove('is-paused');
+  const timerLabel = document.querySelector('.briefing-timer-label');
+  if (timerLabel) timerLabel.textContent = '秒后同步完成';
+  hookBriefingDetailClose();
   const modeChip = document.getElementById('briefing-mode-chip');
   if (modeChip) modeChip.textContent = briefingModeText(data);
   const roundChip = document.getElementById('briefing-round-chip');
@@ -2907,10 +2921,13 @@ function openBriefing(data) {
 
 function closeBriefingOverlay() {
   briefingState.active = false;
+  briefingState.paused = false;
+  briefingState.remaining = 0;
   if (briefingState.raf) { cancelAnimationFrame(briefingState.raf); briefingState.raf = 0; }
   if (briefingState.timer) { clearTimeout(briefingState.timer); briefingState.timer = 0; }
   const overlay = document.getElementById('briefing-overlay');
   if (overlay) {
+    overlay.classList.remove('is-paused');
     overlay.classList.add('is-closing');
     overlay.setAttribute('aria-hidden', 'true');
     if (briefingState.closeTimer) clearTimeout(briefingState.closeTimer);
@@ -2925,7 +2942,97 @@ function closeBriefingOverlay() {
 function endBriefing() {
   if (!briefingState.active) return;
   closeBriefingOverlay();
-  if (gameState && gameState.status === 'playing') render(gameState);
+  if (gameState && gameState.status === 'playing') {
+    const stage = document.getElementById('game-container');
+    if (stage) {
+      stage.classList.remove('scene-reveal');
+      void stage.offsetWidth; // 强制回流，保证每次都能重播入场动画
+      stage.classList.add('scene-reveal');
+    }
+    render(gameState);
+  }
+}
+
+function briefingNow() {
+  return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+}
+
+function briefingTick() {
+  if (!briefingState.active || briefingState.paused) return;
+  const left = Math.max(0, BRIEFING_DURATION_MS - (briefingNow() - briefingState.startedAt));
+  const countdown = document.getElementById('briefing-countdown');
+  if (countdown) countdown.textContent = String(Math.ceil(left / 1000));
+  const bar = document.getElementById('briefing-progress-bar');
+  if (bar) bar.style.width = (left / BRIEFING_DURATION_MS * 100).toFixed(2) + '%';
+  if (left <= 0) { endBriefing(); return; }
+  briefingState.raf = requestAnimationFrame(briefingTick);
+}
+
+function briefingClockStart(durationMs) {
+  briefingState.paused = false;
+  if (briefingState.raf) { cancelAnimationFrame(briefingState.raf); briefingState.raf = 0; }
+  if (briefingState.timer) { clearTimeout(briefingState.timer); briefingState.timer = 0; }
+  briefingState.raf = requestAnimationFrame(briefingTick);
+  // 后台标签页 rAF 会被节流，用定时器兜底，保证简报一定会结束
+  briefingState.timer = setTimeout(endBriefing, Math.max(0, durationMs) + 400);
+}
+
+function pauseBriefing() {
+  if (!briefingState.active || briefingState.paused) return;
+  briefingState.remaining = Math.max(0, BRIEFING_DURATION_MS - (briefingNow() - briefingState.startedAt));
+  briefingState.paused = true;
+  if (briefingState.raf) { cancelAnimationFrame(briefingState.raf); briefingState.raf = 0; }
+  if (briefingState.timer) { clearTimeout(briefingState.timer); briefingState.timer = 0; }
+  const overlay = document.getElementById('briefing-overlay');
+  if (overlay) overlay.classList.add('is-paused');
+  const timerLabel = document.querySelector('.briefing-timer-label');
+  if (timerLabel) timerLabel.textContent = '已暂停 · 阅读机缘';
+}
+
+function resumeBriefing() {
+  if (!briefingState.active || !briefingState.paused) return;
+  const modal = document.getElementById('talent-detail-modal');
+  if (modal && modal.style.display !== 'none') return; // 详情还开着，继续暂停
+  const left = Math.max(0, briefingState.remaining || 0);
+  briefingState.startedAt = briefingNow() - (BRIEFING_DURATION_MS - left);
+  const overlay = document.getElementById('briefing-overlay');
+  if (overlay) overlay.classList.remove('is-paused');
+  const timerLabel = document.querySelector('.briefing-timer-label');
+  if (timerLabel) timerLabel.textContent = '秒后同步完成';
+  if (left <= 0) { endBriefing(); return; }
+  briefingClockStart(left);
+}
+
+// 手机没有 hover：点（或键盘激活）机缘块即可查看完整效果与代价，期间暂停倒计时
+function handleBriefingTap(event) {
+  if (!briefingState.active || !event || !event.target || !event.target.closest) return;
+  const talentEl = event.target.closest('.bc-talent');
+  if (!talentEl || talentEl.classList.contains('is-empty')) return;
+  const card = talentEl.closest('.briefing-card');
+  const slot = card && card.dataset ? card.dataset.slot : '';
+  const talent = slot ? briefingState.talents[slot] : null;
+  if (!talent) return;
+  pauseBriefing();
+  showTalentDetail(talent);
+}
+
+function handleBriefingKey(event) {
+  if (!event || !event.target || !event.target.closest) return;
+  if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+  if (!event.target.closest('.bc-talent')) return;
+  event.preventDefault();
+  handleBriefingTap(event);
+}
+
+function hookBriefingDetailClose() {
+  const modal = document.getElementById('talent-detail-modal');
+  if (!modal || modal.dataset.briefingHooked === '1') return;
+  modal.dataset.briefingHooked = '1';
+  // 关闭按钮所在的 .modal-content 内联了 stopPropagation，冒泡阶段收不到点击，
+  // 所以这里用捕获阶段监听，再推迟一拍确认弹窗确实已关闭。
+  modal.addEventListener('click', function () {
+    setTimeout(resumeBriefing, 0);
+  }, true);
 }
 
 function startBriefing(data) {
@@ -2933,23 +3040,9 @@ function startBriefing(data) {
   if (!document.getElementById('briefing-overlay')) { briefingState.done = true; return; }
   briefingState.active = true;
   briefingState.done = true;
-  briefingState.startedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  briefingState.startedAt = briefingNow();
   openBriefing(data);
-
-  const step = function () {
-    if (!briefingState.active) return;
-    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    const left = Math.max(0, BRIEFING_DURATION_MS - (now - briefingState.startedAt));
-    const countdown = document.getElementById('briefing-countdown');
-    if (countdown) countdown.textContent = String(Math.ceil(left / 1000));
-    const bar = document.getElementById('briefing-progress-bar');
-    if (bar) bar.style.width = (left / BRIEFING_DURATION_MS * 100).toFixed(2) + '%';
-    if (left <= 0) { endBriefing(); return; }
-    briefingState.raf = requestAnimationFrame(step);
-  };
-  briefingState.raf = requestAnimationFrame(step);
-  // 后台标签页 rAF 会被节流，用定时器兜底，保证简报一定会结束
-  briefingState.timer = setTimeout(endBriefing, BRIEFING_DURATION_MS + 400);
+  briefingClockStart(BRIEFING_DURATION_MS);
 }
 
 function maybeStartBriefing(data) {

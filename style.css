@@ -1067,3 +1067,64 @@ body.briefing-open{overflow:hidden}
   #briefing-overlay.is-closing{transition:none}
 }
 
+/* ==================== 界面浮现过渡 (Scene transitions) ====================
+   原来各屏靠 display 硬切，这里统一补一层「入场」：淡入 + 上浮 / 滑入。
+   动画由 display:none → flex/block 自然触发，不需要改动任何 show/hide 逻辑，
+   同屏内的子块（大厅席位、战场三段）再依次延迟，形成类似幻灯片切换的节奏。 */
+@keyframes scene-fade{from{opacity:0}to{opacity:1}}
+@keyframes scene-rise{from{opacity:0;transform:translateY(16px) scale(.992)}to{opacity:1;transform:none}}
+@keyframes scene-drop{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+@keyframes scene-slide{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+
+/* 全屏层：先淡入，避免硬切 */
+.fixed-overlay{animation:scene-fade .24s ease-out both}
+#waiting-room,#game-container{animation:scene-fade .26s ease-out both}
+
+/* 面板/弹窗：上浮登场 */
+.modal-content,#mode-select-box{animation:scene-rise .36s cubic-bezier(.22,.8,.24,1) both}
+
+/* 模式向导的三步切换：从右侧滑入 */
+#step-version,#step-mode,#step-pve{animation:scene-slide .28s cubic-bezier(.22,.8,.24,1) both}
+
+/* 集结大厅：四个席位依次浮现 */
+.lobby-card{animation:scene-rise .34s cubic-bezier(.22,.8,.24,1) both}
+.lobby-card:nth-child(2){animation-delay:.05s}
+.lobby-card:nth-child(3){animation-delay:.1s}
+.lobby-card:nth-child(4){animation-delay:.15s}
+
+/* 战场：标题下落，战况与指令台依次上浮 */
+#game-header{animation:scene-drop .3s ease-out both}
+#battle-overview{animation:scene-rise .38s .04s cubic-bezier(.22,.8,.24,1) both}
+#action-panel-container{animation:scene-rise .4s .1s cubic-bezier(.22,.8,.24,1) both}
+
+/* 结算面板：结束瞬间浮现 */
+#rematch-panel{animation:scene-rise .34s cubic-bezier(.22,.8,.24,1) both}
+
+/* 简报淡出后，战场整体再浮现一次，接上「幻灯片换页」的手感 */
+#game-container.scene-reveal{animation:scene-rise .4s cubic-bezier(.22,.8,.24,1) both}
+
+/* 简报自身淡入；用 backwards 才不会占用最终 opacity，保留原有淡出过渡 */
+#briefing-overlay.is-open{animation:scene-fade .22s ease-out backwards}
+
+@media(prefers-reduced-motion:reduce){
+  .fixed-overlay,#waiting-room,#game-container,.modal-content,#mode-select-box,
+  #step-version,#step-mode,#step-pve,.lobby-card,#game-header,#battle-overview,
+  #action-panel-container,#rematch-panel,#briefing-overlay.is-open,#game-container.scene-reveal{animation:none!important}
+}
+
+/* ==================== 简报机缘可点查看 ==================== */
+.bc-talent{cursor:pointer;transition:background .18s,border-color .18s,transform .12s}
+.bc-talent:hover{background:rgba(126,229,206,.085);border-color:rgba(126,229,206,.34)}
+.bc-talent:active{transform:scale(.996)}
+.bc-talent:focus-visible{outline:2px solid #7ee5ce;outline-offset:3px}
+.bc-talent.is-empty{cursor:default}
+.bc-talent.is-empty:hover{background:rgba(140,163,178,.05);border-color:#2a3d4b}
+.bc-talent-more{display:block;margin-top:-1px;text-align:right;font-size:10px;letter-spacing:.5px;color:#6f97a8}
+.bc-talent:hover .bc-talent-more{color:#7ee5ce}
+
+/* 暂停阅读时：倒计时变色、进度条变淡 */
+#briefing-overlay.is-paused .briefing-progress i{opacity:.4}
+#briefing-overlay.is-paused .briefing-count{color:#e6c58c}
+#briefing-overlay.is-paused .briefing-signal{animation:none;opacity:.45}
+
+
