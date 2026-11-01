@@ -1915,12 +1915,15 @@ function processRound() {
   let data = gameState; let logs = [];
   // Presentation metadata: retain every actual HP hit, including multiple attackers.
   // Synced with the room so each viewer can apply their own feedback perspective.
-  data.combatHits = { round: data.round, hits: [] };
+  data.combatHits = { round: data.round, hits: [], blocks: [] };
   function recordHpHit(source, target, amount, hpBefore) {
     const actual = Math.min(Math.max(0, hpBefore), Math.max(0, amount));
     if (actual > 0 && data[source] && data[target] && source !== target) {
       data.combatHits.hits.push({ source, target, amount: actual });
     }
+  }
+  function recordFullBlock(source, target, amount) {
+    if (amount > 0 && source !== target) data.combatHits.blocks.push({source, target, amount});
   }
   const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', bandage:'绷带', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', symbiosis:'共生', stealth_action:'缄默', crimson_illusion:'幻境', necromancy:'招魂', skip:'禁锢(跳过)', surrender:'认输', quit:'强退' };
   const cap = data.config.capacity; const allKeys = ['p1', 'p2', 'p3', 'p4'];
@@ -2204,14 +2207,14 @@ function processRound() {
                 let dmg = dmgToApply - def.shield; def.shield = 0; actualDmg = dmgToApply;
                 logs.push(`👺 ${defN} 自动举盾挡下部分伤害`);
                 applyDmg(defKey, def, attKey, attN, defN, dmg, "破盾后");
-            } else { def.shield -= dmgToApply; actualDmg = dmgToApply; logs.push(`👺 ${defN} 自动举盾完全吸收伤害`); }
+            } else { recordFullBlock(attKey, defKey, dmgToApply); def.shield -= dmgToApply; actualDmg = dmgToApply; logs.push(`👺 ${defN} 自动举盾完全吸收伤害`); }
             def.tookDamage = true; def.lastAttacker = attKey;
         }
         else if (def.move === 'shield' && !isPiercing) {
           if (dmgToApply > def.shield) {
             let dmg = dmgToApply - def.shield; def.shield = 0; actualDmg = dmg;
             applyDmg(defKey, def, attKey, attN, defN, dmg, "破盾");
-          } else { def.shield -= dmgToApply; logs.push(`<span class="log-safe">${defN} 的护盾吸收了 ${attN} 的伤害</span>`); }
+          } else { recordFullBlock(attKey, defKey, dmgToApply); def.shield -= dmgToApply; logs.push(`<span class="log-safe">${defN} 的护盾吸收了 ${attN} 的伤害</span>`); }
         } else {
           actualDmg = dmgToApply;
           applyDmg(defKey, def, attKey, attN, defN, dmgToApply, isPiercing ? "无视护盾" : "直接");
@@ -2666,10 +2669,10 @@ function render(data) {
   }
 
   const cap = data.config.capacity;
-  updatePlayerCardDOM('p1', data.p1, 1 <= cap && !(isPvE && data.p1 && data.p1.hp <= 0 && 'p1' === 'p3'), data);
-  updatePlayerCardDOM('p2', data.p2, 2 <= cap && !(isPvE && data.p2 && data.p2.hp <= 0 && 'p2' === 'p3'), data);
-  updatePlayerCardDOM('p3', data.p3, 3 <= cap && !(isPvE && data.p3 && data.p3.hp <= 0 && 'p3' === 'p3'), data);
-  updatePlayerCardDOM('p4', data.p4, 4 <= cap && !(isPvE && data.p4 && data.p4.hp <= 0 && 'p4' === 'p3'), data);
+  updatePlayerCardDOM('p1', data.p1, 1 <= cap, data);
+  updatePlayerCardDOM('p2', data.p2, 2 <= cap, data);
+  updatePlayerCardDOM('p3', data.p3, 3 <= cap, data);
+  updatePlayerCardDOM('p4', data.p4, 4 <= cap, data);
 
   const logInner = document.getElementById('battle-log-inner'); if (logInner) logInner.innerHTML = data.log;
   const roundEl = document.getElementById('current-round'); if (roundEl) roundEl.innerText = data.round;
@@ -2742,6 +2745,7 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
   if (!isVisible || !pData) { if (cardEl) cardEl.style.display = 'none'; if (tsRadio) tsRadio.style.display = 'none'; return; } 
   else { if (cardEl) cardEl.style.display = 'block'; }
 
+  if (cardEl) cardEl.classList.toggle('is-defeated', pData.hp <= 0);
   const hpEl = document.getElementById(`${pKey}-hp`); const ammoEl = document.getElementById(`${pKey}-ammo`);
   const shieldEl = document.getElementById(`${pKey}-shield`); const talentEl = document.getElementById(`${pKey}-talent-name`);
   const playerLabelEl = document.getElementById(`${pKey}-label`);
@@ -2765,7 +2769,7 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
     if (pData.hp > 0 && fullData.status === 'playing') {
        if (pData.pendingLoot) newTurnStatusEl.innerHTML = `<span style="color: #d29922;">(抉择中...)</span>`;
        else newTurnStatusEl.innerHTML = (pData.move !== "") ? `<span style="color: #3fb950;">(✅ 已出招)</span>` : `<span style="color: #d29922;">(🤔 思考中...)</span>`;
-    } else newTurnStatusEl.innerHTML = ''; 
+    } else newTurnStatusEl.innerHTML = pData.hp <= 0 ? '<span class="death-label">已阵亡</span>' : ''; 
   }
 
   if (talentEl) {
@@ -2798,7 +2802,7 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
   }
 
   if (pData.hp <= 0) {
-    if (cardEl) { cardEl.style.opacity = '0.3'; cardEl.style.filter = 'grayscale(1)'; }
+    if (cardEl) { cardEl.style.opacity = '0.65'; cardEl.style.filter = 'grayscale(1)'; }
     if (tsRadio) { tsRadio.style.display = 'none'; }
   } else {
     if (cardEl) { cardEl.style.opacity = '1'; cardEl.style.filter = 'none'; }
@@ -2819,7 +2823,7 @@ function updatePlayerCardDOM(pKey, pData, isVisible, fullData) {
   }
 
 if (hpEl) {
-    hpEl.innerText = `${pData.hp}/${pData.maxHp}`;
+    hpEl.innerText = `${Math.max(0, pData.hp)}/${pData.maxHp}`;
     if (pData.hp >= Math.ceil(pData.maxHp * 0.7)) hpEl.style.color = "#3fb950";
     else if (pData.hp >= Math.ceil(pData.maxHp * 0.3)) hpEl.style.color = "#d29922";
     else hpEl.style.color = "#f85149";
@@ -3368,6 +3372,11 @@ function showTalentCodex() {
       const ownPlayer = myRole && myRole !== 'spectator' && data[myRole];
       const newSettlement = data.round !== lastRound && data.combatHits?.round === data.round - 1;
       const hits = newSettlement ? (data.combatHits.hits || []) : [];
+      const blocked = newSettlement && now.hp > 0 && (data.combatHits.blocks || []).some(hit => hit.target === key && hit.amount > 0);
+      if (blocked) {
+        const shieldFX=effect(card,'full-block-fx','',1500);
+        shieldFX.innerHTML='<svg viewBox="0 0 80 90" aria-hidden="true"><path d="M40 5L70 16v26c0 20-13 33-30 43C23 75 10 62 10 42V16Z" fill="currentColor" fill-opacity=".24" stroke="currentColor" stroke-width="3"/><path d="M25 43l11 11 21-25" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>完全格挡</span>';
+      }
       const dealtByMe = !!ownPlayer && key !== myRole && hits.some(hit => hit.source === myRole && hit.target === key && hit.amount > 0);
       const hurtMe = !!ownPlayer && key === myRole && (now.hp < old.hp || hits.some(hit => hit.target === key && hit.amount > 0));
       if (dealtByMe) effect(card,'combat-slash','',700);

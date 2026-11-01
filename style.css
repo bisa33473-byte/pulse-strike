@@ -833,3 +833,13 @@ body:has(#game-container[style*="block"]){align-items:flex-start}
 #game-container .resource-hp.hp-impact{animation:hp-impact .32s ease-out}
 @keyframes hp-impact{0%,100%{transform:translateX(0)}20%{transform:translateX(-2px)}40%{transform:translateX(2px)}60%{transform:translateX(-1px)}80%{transform:translateX(1px)}}
 @media(prefers-reduced-motion:reduce){#game-container .resource-hp.hp-impact{animation:none!important}}
+
+/* Explicit death state; full shield absorption feedback. */
+#game-container .death-label{color:#d4dae3;font-weight:700;border:1px solid #586573;border-radius:4px;padding:2px 6px;letter-spacing:1px}
+#game-container .player-card.is-defeated{border-style:solid;background:#151b22}
+#game-container .player-card.is-defeated .resource-hp>i:first-child{width:0!important}
+#game-container .full-block-fx{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;z-index:6;pointer-events:none;color:#b6e6ff;animation:shield-materialize 1.4s ease-out both;filter:drop-shadow(0 0 8px #63bdf8aa)}
+#game-container .full-block-fx svg{width:48px;height:54px}
+#game-container .full-block-fx>span{font-size:11px;font-weight:700;background:#11293de8;padding:2px 7px;border:1px solid #659cba;border-radius:4px}
+@keyframes shield-materialize{0%{opacity:.08;transform:scale(.45)}40%{opacity:1;transform:scale(1.08)}60%,78%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1.24)}}
+@media(prefers-reduced-motion:reduce){#game-container .full-block-fx{animation:none!important;opacity:1;transform:none}}
