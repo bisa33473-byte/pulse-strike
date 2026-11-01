@@ -843,3 +843,15 @@ body:has(#game-container[style*="block"]){align-items:flex-start}
 #game-container .full-block-fx>span{font-size:11px;font-weight:700;background:#11293de8;padding:2px 7px;border:1px solid #659cba;border-radius:4px}
 @keyframes shield-materialize{0%{opacity:.08;transform:scale(.45)}40%{opacity:1;transform:scale(1.08)}60%,78%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1.24)}}
 @media(prefers-reduced-motion:reduce){#game-container .full-block-fx{animation:none!important;opacity:1;transform:none}}
+
+/* World-channel timestamps and non-destructive loading status. */
+#chat-list .chat-time-divider{background:none;padding:5px;margin:9px auto;text-align:center}
+#chat-list .chat-time-toggle{border:0;border-radius:12px;background:#252e38;color:#a8bbc9;font:inherit;font-size:11px;padding:4px 11px;cursor:pointer}
+#chat-list .chat-time-toggle:focus-visible{outline:2px solid #80d9ca;outline-offset:3px}
+#chat-list .chat-text{white-space:pre-wrap;overflow-wrap:anywhere}
+#chat-status{min-height:16px;margin:0 0 8px;color:#d3b780;font-size:11px;text-align:center}
+#chat-send:disabled{opacity:.55;cursor:wait}
+#chat-list .chat-empty{color:#899eaf;text-align:center;padding:30px 0;font-size:12px}
+
+/* Hidden mode-specific sections must not be reopened by layout display rules. */
+#room-setup[hidden],#battle-overview[hidden],#action-panel-container[hidden],#rematch-panel[hidden],#round-badge[hidden],#surrender-game-btn[hidden]{display:none!important}

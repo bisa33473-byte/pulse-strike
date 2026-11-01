@@ -383,6 +383,7 @@ function handleAvatarUpload(event) {
 
 // ==================== 退出大厅/全局聊天 ====================
 function closeGlobalChat() {
+  stopGlobalChat();
   document.getElementById('chat-modal').style.display = 'none';
   document.getElementById('hub-overlay').style.display = 'flex';
 }
@@ -502,6 +503,18 @@ function openPveSetup(cap, isBossMode) {
     document.getElementById('pve-setup-overlay').style.display = 'flex';
 }
 
+// Room creation belongs exclusively to the online setup screen.
+function setOnlineSetupVisible(visible) {
+  const setup=document.getElementById('room-setup');
+  if(setup){setup.hidden=!visible;setup.style.display=visible?'flex':'none';}
+  for(const id of ['battle-overview','action-panel-container','rematch-panel','round-badge','surrender-game-btn']){
+    const el=document.getElementById(id);if(el)el.hidden=visible;
+  }
+  if(isPvE || visible){
+    const chat=document.getElementById('room-chat-panel');if(chat)chat.style.display='none';
+  }
+}
+
 function startCustomPve() {
     let isBoss = pveSetupConfig.isBossMode;
     let cap = pveSetupConfig.cap;
@@ -512,6 +525,7 @@ function startCustomPve() {
     }
 
     isPvE = true; myRole = 'p1';
+    setOnlineSetupVisible(false);
     gameState = getInitialState(cap, isBoss, bossRole);
     gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title; gameState.p1.avatar = currentUser.avatar;
     gameState.status = 'playing';
@@ -564,103 +578,175 @@ function addAiToRoom() {
     }
 }
 
-// ==================== 世界聊天系统 (终端广播) ====================
+// World chat: append-only writes, one subscription, atomic versioned rendering.
+let globalChatQuery = null, globalChatHandler = null, globalChatRevision = 0;
+let globalChatSending = false, globalChatRefreshTimer = null;
+function chatStatus(text) {
+    const el = document.getElementById('chat-status');
+    if (el) el.textContent = text;
+}
+function stopGlobalChat() {
+    globalChatRevision++;
+    if (globalChatQuery && globalChatHandler) globalChatQuery.off('value', globalChatHandler);
+    globalChatQuery = globalChatHandler = null;
+    if (globalChatRefreshTimer) clearInterval(globalChatRefreshTimer);
+    globalChatRefreshTimer = null;
+}
 function openGlobalChat() {
-    if (!requireJuniorSocial()) return;
+    if (!requireJuniorSocial() || !requireBackend('世界频道')) return;
     document.getElementById('hub-overlay').style.display = 'none';
     document.getElementById('chat-modal').style.display = 'flex';
     listenToGlobalChat();
 }
-
-function sendChatMessage() {
-    if (!requireJuniorSocial()) return;
+async function sendChatMessage() {
+    if (!requireJuniorSocial() || !requireBackend('世界频道') || globalChatSending) return;
     const input = document.getElementById('chat-input');
-    const text = input.value.trim();
-    if(!text) return;
-    if(text.length > 30) return alert("内存警告：单条广播不能超过 30 字符！");
-
-    const chatRef = db.ref('global_chat');
-    chatRef.once('value', snap => {
-        const data = snap.val() || {};
-        const keys = Object.keys(data);
-        const now = Date.now();
-        const threeMins = 3 * 60 * 1000;
-
-        let shouldWipe = false;
-        if (keys.length >= 100) shouldWipe = true;
-        else if (keys.length > 0) {
-            const oldest = data[keys[0]].timestamp;
-            if (now - oldest > threeMins * 100) shouldWipe = true; // 延长总兜底清理时间，3分钟只用于界面显示断层
-        }
-
-        const msgObj = {
+    const draft = input.value, text = draft.trim();
+    if (!text) return;
+    if (text.length > 30) return alert('单条广播不能超过 30 字符。');
+    const button = document.getElementById('chat-send');
+    globalChatSending = true;
+    if (button) { button.disabled = true; button.textContent = '发送中…'; }
+    chatStatus('正在发送…');
+    try {
+        await db.ref('global_chat').push({
             uid: currentUser.uid, username: currentUser.username, title: currentUser.title || '特工',
-            avatar: currentUser.avatar || '', text: text, timestamp: now
-        };
-
-        if (shouldWipe) { chatRef.set(null).then(() => chatRef.push(msgObj)); } 
-        else { chatRef.push(msgObj); }
-        input.value = "";
-    });
-}
-
-function listenToGlobalChat() {
-    if (!isJuniorCommunity()) return;
-    db.ref('global_chat').on('value', snap => {
-        const list = document.getElementById('chat-list');
-        list.innerHTML = "";
-        const data = snap.val();
-        if (!data) return;
-
-        db.ref('users').once('value', uSnap => {
-            const allUsers = uSnap.val() || {};
-            const myFriends = Object.keys(currentUser.friends || {});
-
-            let messages = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
-            let lastTime = 0;
-
-            messages.forEach(msg => {
-                const sender = allUsers[msg.uid];
-                if (!sender || sender.community !== 'junior') return;
-
-                // 3分钟断层时间线
-                if (msg.timestamp - lastTime > 180000) {
-                    let dateStr = new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                    const timeDiv = document.createElement('div');
-                    timeDiv.className = 'chat-time-divider';
-                    timeDiv.innerText = dateStr;
-                    list.appendChild(timeDiv);
-                }
-                lastTime = msg.timestamp;
-
-                let isPossibleFriend = false;
-                if (msg.uid !== currentUser.uid && !myFriends.includes(msg.uid)) {
-                    const theirFriends = Object.keys((allUsers[msg.uid] && allUsers[msg.uid].friends) || {});
-                    const intersection = myFriends.filter(value => theirFriends.includes(value));
-                    if (intersection.length > 0) isPossibleFriend = true;
-                }
-
-                let isSelf = (msg.uid === currentUser.uid);
-                let cssClass = isSelf ? 'chat-msg self' : 'chat-msg';
-
-                const div = document.createElement('div');
-                div.className = cssClass;
-                let avatarSrc = msg.avatar || "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%2330363d'/></svg>";
-                let badge = isPossibleFriend ? `<span class="possible-friend-badge">你的可能好友</span>` : "";
-
-                div.innerHTML = `
-                    <img src="${avatarSrc}" class="chat-avatar" onclick="showProfile('${msg.uid}')">
-                    <div class="chat-content">
-                        ${!isSelf ? `<div class="chat-header"><span class="chat-title">[${msg.title}]</span><span class="chat-name" onclick="showProfile('${msg.uid}')">${msg.username}</span>${badge}</div>` : ''}
-                        <div class="chat-text">${msg.text}</div>
-                    </div>
-                `;
-                list.appendChild(div);
-            });
-            list.scrollTop = list.scrollHeight;
+            avatar: currentUser.avatar || '', community: currentUser.community,
+            text, timestamp: firebase.database.ServerValue.TIMESTAMP
         });
-    });
+        // Do not erase a different draft typed while the request was in flight.
+        if (input.value === draft) input.value = '';
+        const list = document.getElementById('chat-list');
+        list.scrollTop = list.scrollHeight;
+        chatStatus('');
+    } catch (error) {
+        console.error('广播发送失败', error);
+        chatStatus('发送失败，内容已保留。请检查网络或频道写入权限后重试。');
+    } finally {
+        globalChatSending = false;
+        if (button) { button.disabled = false; button.textContent = '发送'; }
+    }
 }
+function chatDayKey(time) {
+    const date = new Date(time);
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+function shouldShowChatTime(previous, current) {
+    return previous === null || chatDayKey(previous) !== chatDayKey(current) || current - previous > 120000;
+}
+function formatChatTime(time, now = Date.now(), full = false) {
+    const d = new Date(time), n = new Date(now);
+    if (!Number.isFinite(d.getTime())) return '时间未知';
+    const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const weekday = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'][d.getDay()];
+    const date = `${d.getMonth()+1}月${d.getDate()}日`;
+    if (full) return `${d.getFullYear()}年${date} ${weekday} ${hm}`;
+    if (chatDayKey(time) === chatDayKey(now)) return hm;
+    const yesterday = new Date(n.getFullYear(),n.getMonth(),n.getDate()-1);
+    if (chatDayKey(time) === chatDayKey(yesterday)) return `昨天 ${date} ${hm}`;
+    // Calendar dates rather than elapsed 24-hour periods, including DST boundaries.
+    const days = (Date.UTC(n.getFullYear(),n.getMonth(),n.getDate()) - Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())) / 86400000;
+    if (days > 1 && days < 7) return `${weekday} ${date} ${hm}`;
+    return `${d.getFullYear() === n.getFullYear() ? '' : d.getFullYear()+'年'}${date} ${hm}`;
+}
+function normalizeChatMessages(data) {
+    return Object.entries(data || {}).filter(([,m]) => m && typeof m.text === 'string' && m.uid != null)
+        .map(([id,m]) => ({...m, id, uid:String(m.uid), timestamp:Number.isFinite(Number(m.timestamp)) && Number(m.timestamp)>0 ? Number(m.timestamp) : null}))
+        .sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0) || a.id.localeCompare(b.id));
+}
+function buildGlobalChat(messages, profiles) {
+    const fragment = document.createDocumentFragment();
+    let previous = null, shown = 0, unresolved = 0;
+    const myFriends = Object.keys(currentUser.friends || {});
+    for (const msg of messages) {
+        const sender = profiles[msg.uid];
+        // Preserve the existing junior/senior separation. Legacy messages need profile evidence.
+        const community = sender?.community || msg.community;
+        if (community !== 'junior') { if (!community) unresolved++; continue; }
+        if (msg.timestamp === null || shouldShowChatTime(previous,msg.timestamp)) {
+            const divider = document.createElement('div'); divider.className = 'chat-time-divider';
+            const time = document.createElement('button'); time.type = 'button'; time.className = 'chat-time-toggle';
+            time.dataset.timestamp = msg.timestamp === null ? '' : String(msg.timestamp);
+            time.dataset.expanded = 'false';
+            time.textContent = msg.timestamp === null ? '时间未知' : formatChatTime(msg.timestamp);
+            time.title = '点击切换完整日期与时间'; time.setAttribute('aria-expanded','false');
+            time.onclick = () => {
+                time.dataset.expanded = time.dataset.expanded === 'true' ? 'false' : 'true';
+                time.setAttribute('aria-expanded',time.dataset.expanded);
+                time.textContent = msg.timestamp === null ? '时间未知' : formatChatTime(msg.timestamp,Date.now(),time.dataset.expanded==='true');
+            };
+            divider.appendChild(time); fragment.appendChild(divider);
+        }
+        previous = msg.timestamp;
+        const self = msg.uid === String(currentUser.uid);
+        const row = document.createElement('div'); row.className = self ? 'chat-msg self' : 'chat-msg'; row.dataset.messageId = msg.id;
+        const avatar = document.createElement('img'); avatar.className = 'chat-avatar'; avatar.alt = '玩家头像';
+        const fallback = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" rx="40" fill="#303e4d"/><text x="40" y="52" text-anchor="middle" font-size="36" fill="#b8cad8">?</text></svg>');
+        avatar.src = typeof msg.avatar==='string' && /^(https?:\/\/|data:image\/)/i.test(msg.avatar) ? msg.avatar : fallback;
+        avatar.onerror = () => { avatar.onerror=null; avatar.src=fallback; };
+        avatar.onclick = () => showProfile(msg.uid);
+        const content = document.createElement('div'); content.className = 'chat-content';
+        if (!self) {
+            const header = document.createElement('div'); header.className = 'chat-header';
+            const title = document.createElement('span'); title.className = 'chat-title'; title.textContent = `[${msg.title || '特工'}]`;
+            const name = document.createElement('span'); name.className = 'chat-name'; name.textContent = msg.username || '未命名玩家'; name.onclick = () => showProfile(msg.uid);
+            header.append(title,name);
+            if (!myFriends.includes(msg.uid) && myFriends.some(uid=>Object.hasOwn(sender?.friends || {},uid))) {
+                const badge=document.createElement('span');badge.className='possible-friend-badge';badge.textContent='你的可能好友';header.appendChild(badge);
+            }
+            content.appendChild(header);
+        }
+        const bubble=document.createElement('div');bubble.className='chat-text';bubble.textContent=msg.text;
+        content.appendChild(bubble);row.append(avatar,content);fragment.appendChild(row);shown++;
+    }
+    if (!shown) { const empty=document.createElement('p');empty.className='chat-empty';empty.textContent=unresolved?'部分旧消息缺少频道信息，暂无法显示。':'还没有广播，来打个招呼吧。';fragment.appendChild(empty); }
+    return {fragment,unresolved};
+}
+function listenToGlobalChat() {
+    stopGlobalChat();
+    if (!isJuniorCommunity() || !db) return;
+    const viewer=String(currentUser.uid), profileCache=new Map();
+    let initial=true;
+    chatStatus('正在加载广播…');
+    globalChatQuery=db.ref('global_chat').limitToLast(100);
+    globalChatHandler=async snap=>{
+        const revision=++globalChatRevision;
+        try {
+            const messages=normalizeChatMessages(snap.val());
+            const profiles={};
+            await Promise.all([...new Set(messages.map(m=>m.uid))].map(async uid=>{
+                if(uid===viewer){profiles[uid]=currentUser;return;}
+                if(!profileCache.has(uid)) {
+                    profileCache.set(uid,db.ref('users/'+uid).once('value').then(s=>s.val()).catch(error=>{
+                        profileCache.delete(uid);console.warn('广播资料读取失败',error);return null;
+                    }));
+                }
+                profiles[uid]=await profileCache.get(uid);
+            }));
+            if(revision!==globalChatRevision || String(currentUser.uid)!==viewer || !isJuniorCommunity())return;
+            const list=document.getElementById('chat-list');
+            const atBottom=initial || list.scrollHeight-list.scrollTop-list.clientHeight<60;
+            const oldScroll=list.scrollTop;
+            const {fragment,unresolved}=buildGlobalChat(messages,profiles);
+            list.replaceChildren(fragment);
+            list.scrollTop=atBottom?list.scrollHeight:oldScroll;initial=false;
+            if(!globalChatSending)chatStatus(unresolved?'部分旧消息缺少身份网络信息，已暂时隐藏。':'');
+        } catch(error) {
+            if(revision===globalChatRevision){console.error('广播加载失败',error);chatStatus('广播加载失败，请关闭后重试。');}
+        }
+    };
+    const activeQuery=globalChatQuery;
+    activeQuery.on('value',globalChatHandler,error=>{
+        if(globalChatQuery!==activeQuery)return;
+        globalChatRevision++;console.error('频道读取失败',error);chatStatus('无法读取世界频道，请检查网络或数据库读取权限。');
+    });
+    globalChatRefreshTimer=setInterval(()=>{
+        document.querySelectorAll('#chat-list .chat-time-toggle').forEach(el=>{
+            if(el.dataset.timestamp)el.textContent=formatChatTime(Number(el.dataset.timestamp),Date.now(),el.dataset.expanded==='true');
+        });
+    },30000);
+}
+
 
 function showProfile(uid) {
     if (!requireJuniorSocial()) return;
@@ -877,6 +963,7 @@ function spectateRoom(rid) {
     document.getElementById('hub-overlay').style.display = 'none';
     document.getElementById('game-container').style.display = 'block';
     myRole = 'spectator';
+    setOnlineSetupVisible(false);
     currentRoomId = rid;
     roomRef = db.ref("rooms_v2/" + rid); // 假设默认正式服，若无再搜beta
     roomRef.once('value', snap => {
@@ -1077,10 +1164,11 @@ function createBasePlayer(roleSlot, currentHp, maxHp, maxAmmo, maxShield) {
 function selectMode(mode, cap) {
   cap = cap || 2;
   isPvE = (mode === 'pve');
+  setOnlineSetupVisible(false);
   document.getElementById('mode-overlay').style.display = 'none';
   document.getElementById('game-container').style.display = 'block';
   if (isPvE) {
-    document.getElementById('room-setup').style.display = 'none'; myRole = 'p1';
+    setOnlineSetupVisible(false); myRole = 'p1';
     gameState = getInitialState(cap);
     gameState.p1.uid = currentUser.uid; gameState.p1.username = currentUser.username; gameState.p1.title = currentUser.title; gameState.p1.avatar = currentUser.avatar;
     let aiNames = ["机甲卫士", "深渊投影", "虚空矩阵"];
@@ -1095,14 +1183,14 @@ function selectMode(mode, cap) {
     if (gameVersion === 'beta') triggerPrayerPhase(false); else render(gameState);
   } else {
     if (!requireBackend('联机对战')) { document.getElementById('game-container').style.display = 'none'; document.getElementById('mode-overlay').style.display = 'flex'; return; }
-    document.getElementById('room-setup').style.display = 'flex';
+    setOnlineSetupVisible(true);
   }
 }
 
 function createRoom(capacity, isBossMode = false) {
   if (!requireBackend('创建联机房间')) return;
   const rid = Math.random().toString(36).substring(2, 7).toUpperCase();
-  myRole = 'p1'; currentRoomId = rid; document.getElementById('room-setup').style.display = 'none';
+  myRole = 'p1'; currentRoomId = rid; setOnlineSetupVisible(false);
   const dbPath = gameVersion === 'beta' ? "rooms_beta/" : "rooms_v2/";
   roomRef = db.ref(dbPath + rid);
   let newRoom = getInitialState(capacity, isBossMode);
@@ -1132,7 +1220,7 @@ function joinRoomWithId(explicitId) {
     else if (cap >= 4 && (!data.p4 || !data.p4.joined)) slot = 'p4';
     if (!slot) { alert("该房间已满！"); return; }
     myRole = slot; currentRoomId = rid;
-    document.getElementById('room-setup').style.display = 'none';
+    setOnlineSetupVisible(false);
     roomRef.child(slot).update({ joined: true, uid: currentUser.uid, username: currentUser.username, title: currentUser.title, avatar: currentUser.avatar });
     updateMyPresence('waiting', rid, 0);
     document.getElementById('room-chat-panel').style.display = 'flex';
@@ -2659,6 +2747,7 @@ function resetRoomForRematch(oldData) {
 // ==================== 渲染引擎 (DOM 接驳) ====================
 function render(data) {
   if (!data) return;
+  setOnlineSetupVisible(false);
 
   if (data.status === 'playing' && data.round === 80) {
     if (myRole && myRole !== 'spectator' && data[myRole] && data[myRole].hp > 0 && !data[myRole].rerolled) {
