@@ -2777,10 +2777,10 @@ function render(data) {
 }
 
 // ==================== 战前情报简报 (Pre-match Briefing) ====================
-// 每局开始（单机 / 联机 / 重赛）先冻结 5 秒，展示全员“本局机缘 + 三维上限”。
+// 每局开始（单机 / 联机 / 重赛）先冻结 10 秒，展示全员“本局机缘 + 三维上限”。
 // 计时只发生在本地，不写入房间数据：各端时钟与网络差异不会打乱战局，
 // 提前结束的一方也只能先锁定指令，必须等所有人出招后才会结算。
-const BRIEFING_DURATION_MS = 5000;
+const BRIEFING_DURATION_MS = 10000;
 const briefingState = { active: false, done: false, raf: 0, timer: 0, closeTimer: 0, startedAt: 0 };
 
 function briefingEscape(value) {

@@ -857,7 +857,7 @@ body:has(#game-container[style*="block"]){align-items:flex-start}
 #room-setup[hidden],#battle-overview[hidden],#action-panel-container[hidden],#rematch-panel[hidden],#round-badge[hidden],#surrender-game-btn[hidden]{display:none!important}
 
 /* ==================== 战前情报简报 (Pre-match Briefing) ====================
-   每局开始前 5 秒的全员档案页，沿用战斗控制台的深海军绿 + 金线 + 细字距语言，
+   每局开始前 10 秒的全员档案页，沿用战斗控制台的深海军绿 + 金线 + 细字距语言，
    与 #game-container 的 #111d29 / #2b4052 / #7ee5ce 色系保持一致。 */
 body.briefing-open{overflow:hidden}
 
