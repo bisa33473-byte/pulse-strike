@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>Pulse Strike - 异教徒之影 (v15.6 进阶版)</title>
     <link href="style.css" rel="stylesheet" type="text/css" />
@@ -1303,6 +1303,12 @@
         </div>
 
         <div id="action-controls">
+          <div class="command-heading"><div><small>TACTICAL COMMAND</small><h2>部署你的下一步</h2></div><span>选择动作 → 锁定目标 → 确认</span></div>
+          <div id="command-dock">
+            <section id="command-wheel-zone" aria-label="战术动作"><div class="section-kicker">01 / 战术动作</div><div id="command-wheel"><div class="wheel-core"><span>◈</span><small>TACTICS</small></div></div></section>
+            <section id="command-fire-zone" aria-label="攻击与机缘"><div class="section-kicker">02 / 攻击与机缘</div></section>
+            <section id="command-detail" aria-live="polite"><div class="section-kicker">03 / 行动预览</div><span id="command-symbol">◎</span><h3 id="command-name">等待指令</h3><p id="command-description">从轮盘选择战术，或选择射击强度。</p><p id="command-target">无需指定目标</p><button id="command-confirm" disabled type="button">请选择动作</button><small>确认前可以随时更换动作</small></section>
+          </div>
           <div class="target-selector" id="target-selector">
             <span class="ts-label">锁定目标 🎯:</span>
             <label id="ts-p1"

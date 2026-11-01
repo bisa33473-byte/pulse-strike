@@ -3111,3 +3111,165 @@ function showTalentCodex() {
 
   document.getElementById('codex-modal').style.display = 'flex';
 }
+// Battle presentation layer. Original actions and Firebase data format are retained.
+(() => {
+  const byId = id => document.getElementById(id);
+  const controls = byId('action-controls');
+  const wheel = byId('command-wheel');
+  let selection = null, selectionRound = null;
+  const moves = {
+    'btn-reload':['↻','补充资源；具体增益受当前机缘影响。'],
+    'btn-shield':['⬡','增加护盾，准备承受下一轮攻击。'],
+    'btn-duck':['⌄','躲避射击，但要小心对手的地刺。'],
+    'btn-spike':['⋀','针对选定目标发动地刺，克制趴下。'],
+    'btn-rock':['◆','投掷石头，按当前玩法规则结算。'],
+    'btn-heal':['＋','消耗 2 点护盾恢复生命；受冷却和机缘限制。']
+  };
+  Object.keys(moves).forEach((id,i) => {
+    const button = byId(id);
+    button.classList.add('wheel-action');
+    button.style.setProperty('--slot',i);
+    button.dataset.symbol = moves[id][0];
+    wheel.append(button);
+  });
+  const fire = byId('command-fire-zone');
+  fire.append(document.querySelector('.attack-zone'),document.querySelector('.tactical-zone'));
+  document.querySelector('.tactical-zone').insertAdjacentHTML('afterbegin','<div class="special-caption">专属机缘</div>');
+  // Keep target radio inputs as the source of truth for the existing engine.
+  byId('target-selector').classList.add('target-legacy');
+  const targeted = new Set(['shoot','ground_spike','holy_light','fatal_shoot','heretic_seal','symbiosis','necromancy']);
+  function parse(button) {
+    const match = (button.getAttribute('onclick') || '').match(/handleInput\('([^']+)'(?:,\s*(\d+))?\)/);
+    return match ? {move:match[1],val:Number(match[2]||0)} : null;
+  }
+  function visible(button) {
+    for (let el=button; el && el!==controls; el=el.parentElement) if(el.style.display==='none') return false;
+    return true;
+  }
+  function reason(button) {
+    if (!button || !visible(button)) return '当前机缘无法使用此动作';
+    const p = gameState && gameState[myRole];
+    if (!p) return '等待战局开始';
+    if(button.id==='btn-shield' && hasTalent(p,'m_d1')) return '深渊魔弹无法使用防御';
+    if(button.id==='btn-heal') {
+      if(gameState.round>=100) return '生体衰竭：无法包扎';
+      if(hasTalent(p,'m_a2')) return '圣戒：无法包扎';
+      if(p.healCd>0) return `冷却剩余 ${p.healCd} 回合`;
+      if(p.hp>=p.maxHp) return '生命值已满';
+      if(p.shield<2) return '需要至少 2 点护盾';
+    }
+    if(button.classList.contains('disabled')) {
+      const action = parse(button);
+      if(p.stealthTimer>0) return '隐匿状态限制此动作';
+      if(action && action.move==='shoot') return '资源不足或当前机缘限制射击';
+      return '当前资源、冷却或机缘条件不满足';
+    }
+    return '';
+  }
+  function canTarget(key) {
+    const p=gameState && gameState[key];
+    if(!p || key===myRole || Number(key.slice(1))>gameState.config.capacity) return false;
+    if(selection?.move==='necromancy') return p.hp<=0;
+    return p.hp>0 && !(p.stealthTimer>0) && !(gameState[myRole]?.zombieTimer>0 && key===gameState[myRole].zombieMaster);
+  }
+  function targetKey() {
+    if(gameState?.config.capacity===2) return myRole==='p1'?'p2':'p1';
+    return document.querySelector('input[name="atk-target"]:checked')?.value;
+  }
+  function preview() {
+    const button=selection && byId(selection.id);
+    controls.querySelectorAll('.is-selected').forEach(el=>el.classList.remove('is-selected'));
+    if(button) button.classList.add('is-selected');
+    const needs=selection && targeted.has(selection.move);
+    const key=targetKey();
+    for(let i=1;i<=4;i++) {
+      const card=byId(`p${i}-card`), available=!!needs && canTarget(`p${i}`);
+      card.classList.toggle('targetable',available);
+      card.classList.toggle('locked-target',available && key===`p${i}`);
+      card.tabIndex=available?0:-1;
+      card.setAttribute('aria-label',`${gameState?.[`p${i}`]?.username || '玩家'}${available?'，点击锁定目标':''}`);
+    }
+    const blocked=button ? reason(button) : '';
+    byId('command-symbol').textContent=button?.dataset.symbol || (selection?'⌖':'◎');
+    byId('command-name').textContent=button ? ((selection.move==='shoot'?'射击 · ':selection.move==='fatal_shoot'?'蚀命狂击 · ':'')+button.textContent.trim()) : '等待指令';
+    byId('command-description').textContent=blocked || (button && (moves[button.id]?.[1] || (selection.move==='shoot'?`以 ${selection.val} 点强度发动攻击；消耗和效果依当前机缘结算。`:'按当前机缘规则结算，确认后提交行动。'))) || '从轮盘选择战术，或选择射击强度。';
+    byId('command-target').textContent=needs ? (key && canTarget(key)?`锁定：${gameState[key].username || key}`:'请点击上方角色卡片锁定目标') : '无需指定目标';
+    const confirm=byId('command-confirm');
+    confirm.disabled=!selection || !!blocked || (!!needs && !canTarget(key));
+    confirm.textContent=blocked?'当前不可用':needs&&!canTarget(key)?'请先锁定目标':selection?'确认行动 →':'请选择动作';
+    controls.querySelectorAll('button[onclick]').forEach(el=>el.setAttribute('aria-disabled',String(!!reason(el))));
+  }
+  // Capture preselection before the original inline handlers run.
+  controls.addEventListener('click', event => {
+    const button=event.target.closest('button[onclick]');
+    if(!button) return;
+    const action=parse(button);
+    if(!action) return; // Pocket inventory retains its existing dialog.
+    event.preventDefault(); event.stopImmediatePropagation();
+    selection={...action,id:button.id}; selectionRound=gameState?.round;
+    preview();
+  },true);
+  for(let i=1;i<=4;i++) {
+    const key=`p${i}`, card=byId(`${key}-card`);
+    const select = event => {
+      if(event.target.closest('.active-talent')) return;
+      if(!selection || !targeted.has(selection.move) || !canTarget(key)) return;
+      document.querySelector(`input[name="atk-target"][value="${key}"]`).checked=true;
+      preview();
+    };
+    card.addEventListener('click',select);
+    card.addEventListener('keydown',event=>{if(event.target===card && (event.key==='Enter'||event.key===' ')){event.preventDefault();select(event);}});
+  }
+  byId('command-confirm').addEventListener('click',()=>{
+    if(!selection || byId('command-confirm').disabled || controls.style.display==='none') return;
+    const chosen={...selection};
+    if(reason(byId(chosen.id))) { preview(); return; }
+    handleInput(chosen.move,chosen.val);
+    if(gameState?.[myRole]?.move) { selection=null; preview(); }
+  });
+  function robot(key) {
+    const n=Number(key.slice(1)), color=['#65dcca','#82b6ff','#e8bc72','#bd9df6'][n-1];
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" rx="18" fill="#172637"/><path d="M40 9v12M34 9h12" stroke="${color}" stroke-width="3"/><path d="M18 29l8-9h28l8 9v30l-9 9H27l-9-9z" fill="#263e53" stroke="${color}" stroke-width="2"/><rect x="23" y="32" width="34" height="15" rx="5" fill="#0b1420"/><path d="M28 39h8m8 0h8" stroke="${color}" stroke-width="4"/><path d="M31 56h18" stroke="${color}" stroke-width="3"/><text x="66" y="74" fill="${color}" font-size="12" text-anchor="middle">${n}</text></svg>`;
+    return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  }
+  function meter(key,kind) {
+    const value=byId(`${key}-${kind}`);
+    if(!value) return;
+    let bar=byId(`${key}-${kind}-visual`);
+    if(!bar) {bar=document.createElement('div');bar.id=`${key}-${kind}-visual`;value.parentElement.append(bar);}
+    const [current,max]=value.textContent.split('/').map(Number);
+    const ratio=max>0?Math.max(0,Math.min(1,current/max)):0;
+    const label=kind==='hp'?'生命':kind==='shield'?'护盾':kind==='sanity'?'理智':byId(`${key}-ammo-label`).textContent;
+    bar.className=`resource-visual resource-${kind}`;
+    bar.setAttribute('role','img');bar.setAttribute('aria-label',`${label} ${current}/${max}`);
+    if(kind==='hp'||kind==='sanity') {
+      if(!bar.firstChild) bar.innerHTML='<i></i>';
+      bar.firstChild.style.width=`${ratio*100}%`;
+      bar.classList.toggle('low-resource',ratio<=0.3);
+    } else {
+      const count=Math.min(16,Math.max(0,Math.ceil(max)||0));
+      bar.innerHTML=Array.from({length:count},(_,i)=>`<i class="${i<count*ratio?'filled':''}"></i>`).join('');
+      if(max>16) bar.title=`每格约 ${Math.round(max/16*10)/10} 点；准确数值见上方`;
+    }
+  }
+  function refresh(data) {
+    if(!data) return;
+    if(selectionRound!==data.round || data[myRole]?.move || data.status!=='playing') selection=null;
+    for(let i=1;i<=4;i++) {
+      const key=`p${i}`, p=data[key]; if(!p) continue;
+      const card=byId(`${key}-card`);
+      card.classList.toggle('self-card',key===myRole);
+      if(i<=data.config.capacity) card.style.display='block';
+      const img=byId(`${key}-avatar`);
+      if(!p.avatar) img.src=robot(key);
+      img.alt=p.avatar?'玩家头像':`机甲 ${i} 号头像`;
+      for(const kind of ['hp','ammo','shield','sanity']) meter(key,kind);
+    }
+    byId('stats-board').dataset.count=data.config.capacity;
+    const specials=document.querySelector('.tactical-grid');
+    document.querySelector('.tactical-zone').style.display=Array.from(specials.children).some(el=>el.style.display!=='none')?'block':'none';
+    preview();
+  }
+  const originalRender=render;
+  render=function(data){originalRender(data);refresh(data);};
+})();
