@@ -855,3 +855,215 @@ body:has(#game-container[style*="block"]){align-items:flex-start}
 
 /* Hidden mode-specific sections must not be reopened by layout display rules. */
 #room-setup[hidden],#battle-overview[hidden],#action-panel-container[hidden],#rematch-panel[hidden],#round-badge[hidden],#surrender-game-btn[hidden]{display:none!important}
+
+/* ==================== 战前情报简报 (Pre-match Briefing) ====================
+   每局开始前 5 秒的全员档案页，沿用战斗控制台的深海军绿 + 金线 + 细字距语言，
+   与 #game-container 的 #111d29 / #2b4052 / #7ee5ce 色系保持一致。 */
+body.briefing-open{overflow:hidden}
+
+#briefing-overlay{
+  position:fixed;inset:0;z-index:1700;display:none;box-sizing:border-box;
+  padding:clamp(14px,2.6vw,38px);
+  background:
+    radial-gradient(118% 88% at 50% -12%,#14333d 0%,#0c1822 44%,#060b10 100%),
+    linear-gradient(180deg,#0c1822,#060b10);
+  color:#dce8f3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  overflow:auto;overscroll-behavior:contain;
+}
+#briefing-overlay.is-open{display:flex}
+#briefing-overlay.is-closing{opacity:0;pointer-events:none;transition:opacity .22s ease}
+#briefing-overlay::before{
+  content:'';position:fixed;inset:0;pointer-events:none;opacity:.45;
+  background:repeating-linear-gradient(180deg,rgba(126,229,206,.05) 0 1px,transparent 1px 3px);
+}
+#briefing-overlay::after{
+  content:'';position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(72% 62% at 50% 44%,transparent 38%,rgba(3,7,10,.78) 100%);
+}
+
+.briefing-frame{
+  position:relative;z-index:1;width:100%;max-width:1180px;margin:auto;
+  display:flex;flex-direction:column;gap:clamp(12px,1.7vh,22px);
+  animation:briefing-frame-in .42s cubic-bezier(.22,.8,.24,1) both;
+}
+
+/* ---------- 页眉 ---------- */
+.briefing-head{display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center}
+.briefing-kicker{
+  display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:4px;
+  text-transform:uppercase;color:#79a9b0;
+}
+.briefing-signal{
+  width:7px;height:7px;border-radius:50%;background:#7ee5ce;
+  box-shadow:0 0 10px #7ee5ce;animation:briefing-pulse 1.5s ease-in-out infinite;
+}
+.briefing-slash{color:#36525e;letter-spacing:0}
+.briefing-title{margin:0;font-size:clamp(20px,2.6vw,29px);font-weight:600;letter-spacing:6px;color:#eaf7f4}
+.briefing-title span{
+  display:block;margin-top:7px;font-size:9px;font-weight:400;letter-spacing:4px;color:#5d7c89;
+}
+.briefing-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.briefing-chip{
+  padding:4px 11px;border:1px solid #2d4b5a;border-radius:20px;background:#0e1e29;
+  font-size:10px;letter-spacing:1.5px;color:#8fb6c4;white-space:nowrap;
+}
+.briefing-chip.is-gold{border-color:#6a5832;background:#1d1a12;color:#e6c58c}
+.briefing-chip.is-muted{color:#7b93a3}
+
+/* ---------- 档案栅格 ---------- */
+.briefing-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:clamp(8px,1.1vw,14px);width:100%}
+.briefing-grid[data-count="2"]{max-width:900px;margin:0 auto}
+.briefing-grid[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+.briefing-grid[data-count="4"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+.briefing-card{
+  position:relative;display:flex;flex-direction:column;gap:10px;min-width:0;
+  padding:clamp(12px,1.3vw,17px);border:1px solid #2b4052;border-radius:14px;
+  background:linear-gradient(158deg,#132230,#0e1a25 72%);
+  animation:briefing-card-in .5s cubic-bezier(.2,.8,.2,1) backwards;
+  transition:border-color .2s,transform .2s;
+}
+.briefing-card:nth-child(2){animation-delay:.06s}
+.briefing-card:nth-child(3){animation-delay:.12s}
+.briefing-card:nth-child(4){animation-delay:.18s}
+.briefing-card::before{
+  content:'';position:absolute;top:0;left:14px;right:14px;height:2px;border-radius:0 0 2px 2px;
+  background:var(--faction,#3c5a6b);opacity:.9;
+}
+.briefing-card[data-faction="angel"]{--faction:#3fb950}
+.briefing-card[data-faction="demon"]{--faction:#a371f7}
+.briefing-card[data-faction="heretic"]{--faction:#f85149}
+.briefing-card[data-faction="neutral"]{--faction:#46606f}
+@media(hover:hover){.briefing-card:hover{transform:translateY(-2px);border-color:#3d6073}}
+
+.bc-head{display:flex;align-items:center;gap:11px;min-width:0}
+.bc-avatar{
+  width:44px;height:44px;flex:none;border-radius:12px;object-fit:cover;
+  border:1px solid #3a5266;background:#16232f;
+}
+.bc-id{min-width:0;display:flex;flex-direction:column;gap:2px}
+.bc-slot{display:flex;align-items:center;gap:6px;font-size:9px;letter-spacing:2px;color:#6f8b9b}
+.bc-slot b{color:#9fc3cf;font-weight:600}
+.bc-name{
+  font-size:15px;font-weight:600;color:#eaf4fa;line-height:1.25;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.bc-title{font-size:10px;color:#7f97a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bc-tag{
+  padding:1px 6px;border-radius:4px;font-size:9px;letter-spacing:.5px;line-height:1.5;
+  border:1px solid transparent;white-space:nowrap;
+}
+.bc-tag.is-you{border-color:#2f6a5f;background:#12332e;color:#7ee5ce}
+.bc-tag.is-ai{border-color:#3a4c5c;background:#16242f;color:#9ab3c4}
+.bc-tag.is-boss{border-color:#6d2f2c;background:#2a1413;color:#ff9a92}
+
+/* ---------- 机缘 ---------- */
+.bc-talent{
+  padding:10px 12px;border-radius:10px;border:1px solid rgba(126,229,206,.16);
+  border-left:2px solid var(--faction,#3c5a6b);background:rgba(126,229,206,.045);
+  display:flex;flex-direction:column;gap:6px;
+}
+.bc-talent.is-empty{border-color:#2a3d4b;border-left-color:#46606f;background:rgba(140,163,178,.05)}
+.bc-talent-head{display:flex;align-items:center;gap:7px;min-width:0}
+.bc-talent-icon{font-size:14px;line-height:1}
+.bc-talent-name{
+  font-size:13px;font-weight:600;color:#f0f8ff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.bc-talent-kind{
+  margin-left:auto;flex:none;font-size:9px;letter-spacing:.5px;color:#7c9aa9;
+  border:1px solid #2c4453;border-radius:10px;padding:1px 7px;background:#0f1d27;
+}
+.bc-talent-effect,
+.bc-talent-cost{
+  margin:0;font-size:11px;line-height:1.65;color:#a9c2d1;
+  display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;
+}
+.bc-talent-effect{-webkit-line-clamp:2}
+.bc-talent-cost{-webkit-line-clamp:2;color:#d9b478}
+.bc-pocket{font-size:10px;color:#b9a0e0;letter-spacing:.5px}
+
+/* ---------- 三维 ---------- */
+.bc-stats{display:flex;flex-direction:column;gap:7px;margin-top:auto;padding-top:2px}
+.bc-stat{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:8px}
+.bc-stat-label{font-size:10px;letter-spacing:1px;color:#8ba4b5}
+.bc-stat-bar{position:relative;height:6px;border-radius:3px;background:#1a2836;overflow:hidden}
+.bc-stat-bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#b92e43,#f36c78)}
+.bc-stat.is-ammo .bc-stat-bar i{background:linear-gradient(90deg,#b98a34,#dfbb73)}
+.bc-stat.is-shield .bc-stat-bar i{background:linear-gradient(90deg,#3f6f9e,#85bafa)}
+.bc-stat-value{
+  font-size:12px;font-weight:600;color:#e6f2fa;font-variant-numeric:tabular-nums;
+  text-align:right;min-width:52px;
+}
+.bc-stat-value em{font-style:normal;font-size:10px;font-weight:400;color:#6f8a9c;margin-left:1px}
+
+.briefing-hint{margin:0;text-align:center;font-size:10px;letter-spacing:1px;color:#6f8a9c}
+
+/* ---------- 页脚倒计时 ---------- */.briefing-foot{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
+  gap:clamp(10px,1.6vw,22px);padding:clamp(10px,1.1vw,14px) clamp(13px,1.8vw,20px);
+  border:1px solid #263d4c;border-radius:12px;background:#0b1620;
+}
+.briefing-timer{display:flex;align-items:baseline;gap:7px;white-space:nowrap}
+.briefing-count{
+  font-size:26px;font-weight:700;line-height:1;color:#7ee5ce;
+  font-variant-numeric:tabular-nums;min-width:1.3em;text-align:right;
+}
+.briefing-timer-label{font-size:10px;letter-spacing:1px;color:#7d95a4}
+.briefing-progress{height:5px;border-radius:3px;background:#16242f;overflow:hidden}
+.briefing-progress i{
+  display:block;height:100%;width:100%;border-radius:3px;
+  background:linear-gradient(90deg,#3aa38c,#7ee5ce);
+  box-shadow:0 0 12px rgba(126,229,206,.45);
+}
+.briefing-skip{
+  padding:8px 16px;border:1px solid #35586a;border-radius:8px;background:#122531;
+  color:#a9c9d6;font:inherit;font-size:11px;letter-spacing:1px;cursor:pointer;
+  transition:color .18s,border-color .18s,background .18s;
+}
+.briefing-skip:hover{color:#d8f7ef;border-color:#7ee5ce;background:#17323a}
+.briefing-skip:focus-visible{outline:2px solid #c5fff0;outline-offset:3px}
+
+@keyframes briefing-frame-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes briefing-card-in{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes briefing-pulse{0%,100%{opacity:.55;transform:scale(.9)}50%{opacity:1;transform:scale(1.12)}}
+
+/* ---------- 窄屏：双列紧凑版，隐藏长文只留机缘名与三维 ---------- */
+@media(max-width:900px){
+  .briefing-grid,
+  .briefing-grid[data-count="2"],
+  .briefing-grid[data-count="3"],
+  .briefing-grid[data-count="4"]{grid-template-columns:repeat(2,minmax(0,1fr));max-width:none}
+  .briefing-grid[data-count="3"] .briefing-card:last-child{grid-column:1/-1}
+}
+@media(max-width:620px){
+  #briefing-overlay{padding:12px}
+  .briefing-title{letter-spacing:3px}
+  .briefing-kicker{font-size:8px;letter-spacing:2.5px}
+  .briefing-card{padding:10px;gap:8px;border-radius:11px}
+  .bc-avatar{width:34px;height:34px;border-radius:9px}
+  .bc-name{font-size:13px}
+  .bc-talent{padding:7px 8px}
+  .bc-talent-name{font-size:11.5px}
+  .bc-talent-kind{display:none}
+  .bc-talent-effect,
+  .bc-talent-cost{-webkit-line-clamp:1;font-size:10px}
+  .bc-stat{grid-template-columns:24px minmax(0,1fr) auto;gap:5px}
+  .bc-stat-label{font-size:9px;letter-spacing:0}
+  .bc-stat-value{font-size:10.5px;min-width:44px}
+  .briefing-foot{grid-template-columns:auto minmax(0,1fr);row-gap:8px;padding:9px 11px}
+  .briefing-progress{grid-column:1/-1;order:3}
+  .briefing-skip{font-size:10px;padding:7px 11px}
+  .briefing-count{font-size:21px}
+  .briefing-hint{display:none}
+}
+@media(max-height:560px){
+  .briefing-title span{display:none}
+  .briefing-head{gap:5px}
+}
+@media(prefers-reduced-motion:reduce){
+  #briefing-overlay,.briefing-frame,.briefing-card,.briefing-signal{animation:none!important}
+  .briefing-card{transition:none}
+  #briefing-overlay.is-closing{transition:none}
+}
+

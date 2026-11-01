@@ -1306,6 +1306,7 @@ function setupRoomListener(rid) {
 }
 
 function renderLobby(rid) {
+  briefingState.done = false; // 回到大厅即视为新一局待开始，重赛后可以再次播简报
   document.getElementById('game-container').style.display = 'none'; document.getElementById('waiting-room').style.display = 'block'; document.getElementById('lobby-rid').innerText = rid;
   document.getElementById('spectator-banner-lobby').style.display = myRole === 'spectator' ? 'block' : 'none';
   const cap = gameState.config.capacity;
@@ -1377,6 +1378,7 @@ async function exitGame() {
     if (oldRoom) oldRoom.off();
     if (db && oldId) db.ref('rooms_chat/' + oldId).off();
     roomRef=null; currentRoomId=''; myRole=null; gameState=null; isPvE=false; isProcessing=false; isRerollingGlobal=false;
+    closeBriefingOverlay(); briefingState.done = false;
     document.querySelectorAll('.fixed-overlay').forEach(el=>el.style.display='none');
     ['game-container','waiting-room','rematch-panel','room-chat-panel','talent-overlay','prayer-overlay'].forEach(id=>{const el=document.getElementById(id);if(el) el.style.display='none';});
     document.querySelectorAll('input[name="atk-target"]').forEach(el=>el.checked=false);
@@ -1778,6 +1780,7 @@ function checkRoundStart() {
 
 function handleInput(move, val = 0) {
   if (!gameState || !myRole || myRole === 'spectator' || !gameState[myRole]) return;
+  if (briefingState.active) return; // 战前情报简报期间冻结所有指令，先看清对手再出招
   const myData = gameState[myRole];
   if (myData.move !== "" || myData.hp <= 0) return;
   if (gameState.round === 80 && !myData.rerolled) return;
@@ -2748,6 +2751,7 @@ function resetRoomForRematch(oldData) {
 function render(data) {
   if (!data) return;
   setOnlineSetupVisible(false);
+  maybeStartBriefing(data);
 
   if (data.status === 'playing' && data.round === 80) {
     if (myRole && myRole !== 'spectator' && data[myRole] && data[myRole].hp > 0 && !data[myRole].rerolled) {
@@ -2770,6 +2774,195 @@ function render(data) {
   if (specBanner) specBanner.style.display = (myRole === 'spectator') ? 'block' : 'none';
 
   updateActionPanel(data); updateRematchPanel(data);
+}
+
+// ==================== 战前情报简报 (Pre-match Briefing) ====================
+// 每局开始（单机 / 联机 / 重赛）先冻结 5 秒，展示全员“本局机缘 + 三维上限”。
+// 计时只发生在本地，不写入房间数据：各端时钟与网络差异不会打乱战局，
+// 提前结束的一方也只能先锁定指令，必须等所有人出招后才会结算。
+const BRIEFING_DURATION_MS = 5000;
+const briefingState = { active: false, done: false, raf: 0, timer: 0, closeTimer: 0, startedAt: 0 };
+
+function briefingEscape(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+
+function briefingFaction(type) {
+  if (type === 'angel') return { icon: '👼', label: '天使', cls: 'angel' };
+  if (type === 'demon') return { icon: '😈', label: '恶魔', cls: 'demon' };
+  if (type === 'heretic') return { icon: '👺', label: '异教徒', cls: 'heretic' };
+  return { icon: '◈', label: '无阵营', cls: 'neutral' };
+}
+
+function briefingAvatar(player, key) {
+  const raw = player && typeof player.avatar === 'string' ? player.avatar : '';
+  if (/^(https?:\/\/|data:image\/)/i.test(raw)) return briefingEscape(raw);
+  const tone = { p1: '#68d8c5', p2: '#dfbb73', p3: '#a371f7', p4: '#f36c78' }[key] || '#68d8c5';
+  const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>" +
+    "<rect width='64' height='64' rx='14' fill='#16232f'/>" +
+    "<circle cx='32' cy='25' r='10' fill='" + tone + "' fill-opacity='.9'/>" +
+    "<path d='M12 58c3-12 11-17 20-17s17 5 20 17' fill='" + tone + "' fill-opacity='.45'/></svg>";
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+function briefingTalentBlock(player, faction) {
+  const talent = player.talent || player.extraTalent;
+  if (!talent) {
+    return '<div class="bc-talent is-empty">' +
+      '<div class="bc-talent-head"><span class="bc-talent-icon">◈</span>' +
+      '<span class="bc-talent-name">无机缘</span>' +
+      '<span class="bc-talent-kind">标准战场</span></div>' +
+      '<p class="bc-talent-effect">本局没有机缘加持，只凭三维与战术分胜负。</p></div>';
+  }
+  const lines = String(talent.desc || '').split('\n').map(function (line) { return line.trim(); }).filter(Boolean);
+  const costLine = lines.filter(function (line) { return /^代价/.test(line); })[0] || '';
+  const effect = lines.filter(function (line) { return line !== costLine; }).join(' ');
+  const fullDesc = lines.join(' · ');
+  return '<div class="bc-talent" title="' + briefingEscape(fullDesc) + '">' +
+    '<div class="bc-talent-head"><span class="bc-talent-icon">' + faction.icon + '</span>' +
+    '<span class="bc-talent-name">' + briefingEscape(talent.name) + '</span>' +
+    '<span class="bc-talent-kind">' + briefingEscape(talent.category || '机制') + ' · ' + faction.label + '</span></div>' +
+    '<p class="bc-talent-effect">' + briefingEscape(effect) + '</p>' +
+    (costLine ? '<p class="bc-talent-cost">' + briefingEscape(costLine) + '</p>' : '') +
+    '</div>';
+}
+
+function briefingStatRow(kind, label, current, max) {
+  const cur = Number(current) || 0;
+  const limit = Number(max) || 0;
+  const pct = limit > 0 ? Math.max(0, Math.min(100, Math.round((cur / limit) * 100))) : 0;
+  return '<div class="bc-stat is-' + kind + '">' +
+    '<span class="bc-stat-label">' + label + '</span>' +
+    '<span class="bc-stat-bar" aria-hidden="true"><i style="width:' + pct + '%"></i></span>' +
+    '<span class="bc-stat-value">' + cur + '<em>/' + limit + '</em></span></div>';
+}
+
+function briefingCardHtml(key, player, data) {
+  if (!player) return '';
+  const faction = briefingFaction(player.talent ? player.talent.type : (player.extraTalent ? player.extraTalent.type : ''));
+  const uid = String(player.uid || '');
+  const name = String(player.username || '');
+  const isMe = myRole === key;
+  const isBoss = !!(data.config && data.config.isBossMode && data.config.bossRole === key);
+  const isAi = /^AI/i.test(uid) || /^00000\d$/.test(uid) || /^AI\s*-/.test(name) || /人机/.test(String(player.title || ''));
+  const tags = [];
+  if (isMe) tags.push('<span class="bc-tag is-you">你</span>');
+  if (isAi) tags.push('<span class="bc-tag is-ai">AI</span>');
+  if (isBoss) tags.push('<span class="bc-tag is-boss">深渊领主</span>');
+  const title = player.title ? '<div class="bc-title">[' + briefingEscape(player.title) + ']</div>' : '';
+  const pocket = (player.talent && player.extraTalent)
+    ? '<div class="bc-pocket">口袋装备：' + briefingEscape(player.extraTalent.name) + '</div>' : '';
+
+  return '<article class="briefing-card" data-faction="' + faction.cls + '" data-slot="' + key + '">' +
+    '<header class="bc-head">' +
+    '<img class="bc-avatar" src="' + briefingAvatar(player, key) + '" alt="' + briefingEscape(key.toUpperCase()) + ' 头像" loading="lazy" />' +
+    '<div class="bc-id"><div class="bc-slot"><b>' + key.toUpperCase() + '</b>' + tags.join('') + '</div>' +
+    '<div class="bc-name">' + briefingEscape(name || '未命名特工') + '</div>' + title + '</div>' +
+    '</header>' +
+    briefingTalentBlock(player, faction) + pocket +
+    '<div class="bc-stats">' +
+    briefingStatRow('hp', '生命', player.hp, player.maxHp) +
+    briefingStatRow('ammo', '弹药', player.ammo, player.maxAmmo) +
+    briefingStatRow('shield', '护盾', player.shield, player.maxShield) +
+    '</div></article>';
+}
+
+function briefingModeText(data) {
+  const cfg = data.config || {};
+  const cap = Number(cfg.capacity) || 2;
+  if (cfg.isBossMode) return '1 v ' + Math.max(1, cap - 1) + ' · 深渊 BOSS';
+  if (cap === 2) return '1 v 1 · 决斗';
+  if (cap === 3) return '三人混战';
+  return '四人混战';
+}
+
+function openBriefing(data) {
+  const overlay = document.getElementById('briefing-overlay');
+  if (!overlay) return;
+  const keys = ['p1', 'p2', 'p3', 'p4'].slice(0, Number(data.config && data.config.capacity) || 2);
+  const seats = keys.filter(function (key) { return data[key]; });
+  const grid = document.getElementById('briefing-grid');
+  if (grid) {
+    grid.dataset.count = String(seats.length || 2);
+    grid.innerHTML = seats.map(function (key) { return briefingCardHtml(key, data[key], data); }).join('');
+  }
+  const modeChip = document.getElementById('briefing-mode-chip');
+  if (modeChip) modeChip.textContent = briefingModeText(data);
+  const roundChip = document.getElementById('briefing-round-chip');
+  if (roundChip) roundChip.textContent = 'ROUND ' + String(data.round || 1).padStart(2, '0');
+  const ruleChip = document.getElementById('briefing-rule-chip');
+  if (ruleChip) ruleChip.textContent = gameVersion === 'beta' ? '机缘战场 · 圣魔降临' : '标准战场 · 纯战术';
+  const countdown = document.getElementById('briefing-countdown');
+  if (countdown) countdown.textContent = String(Math.round(BRIEFING_DURATION_MS / 1000));
+  const bar = document.getElementById('briefing-progress-bar');
+  if (bar) bar.style.width = '100%';
+  if (briefingState.closeTimer) { clearTimeout(briefingState.closeTimer); briefingState.closeTimer = 0; }
+  overlay.classList.remove('is-closing');
+  overlay.classList.add('is-open');
+  overlay.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('briefing-open');
+}
+
+function closeBriefingOverlay() {
+  briefingState.active = false;
+  if (briefingState.raf) { cancelAnimationFrame(briefingState.raf); briefingState.raf = 0; }
+  if (briefingState.timer) { clearTimeout(briefingState.timer); briefingState.timer = 0; }
+  const overlay = document.getElementById('briefing-overlay');
+  if (overlay) {
+    overlay.classList.add('is-closing');
+    overlay.setAttribute('aria-hidden', 'true');
+    if (briefingState.closeTimer) clearTimeout(briefingState.closeTimer);
+    briefingState.closeTimer = setTimeout(function () {
+      overlay.classList.remove('is-open', 'is-closing');
+      briefingState.closeTimer = 0;
+    }, 240);
+  }
+  document.body.classList.remove('briefing-open');
+}
+
+function endBriefing() {
+  if (!briefingState.active) return;
+  closeBriefingOverlay();
+  if (gameState && gameState.status === 'playing') render(gameState);
+}
+
+function startBriefing(data) {
+  if (briefingState.active) return;
+  if (!document.getElementById('briefing-overlay')) { briefingState.done = true; return; }
+  briefingState.active = true;
+  briefingState.done = true;
+  briefingState.startedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  openBriefing(data);
+
+  const step = function () {
+    if (!briefingState.active) return;
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const left = Math.max(0, BRIEFING_DURATION_MS - (now - briefingState.startedAt));
+    const countdown = document.getElementById('briefing-countdown');
+    if (countdown) countdown.textContent = String(Math.ceil(left / 1000));
+    const bar = document.getElementById('briefing-progress-bar');
+    if (bar) bar.style.width = (left / BRIEFING_DURATION_MS * 100).toFixed(2) + '%';
+    if (left <= 0) { endBriefing(); return; }
+    briefingState.raf = requestAnimationFrame(step);
+  };
+  briefingState.raf = requestAnimationFrame(step);
+  // 后台标签页 rAF 会被节流，用定时器兜底，保证简报一定会结束
+  briefingState.timer = setTimeout(endBriefing, BRIEFING_DURATION_MS + 400);
+}
+
+function maybeStartBriefing(data) {
+  if (!data || !data.config) return;
+  if (data.status !== 'playing') {
+    // 离开对局 / 重赛回大厅时复位，下一局可以再次展示
+    briefingState.done = false;
+    if (briefingState.active) closeBriefingOverlay();
+    return;
+  }
+  if (briefingState.active || briefingState.done) return;
+  if ((data.round || 1) !== 1) return; // 只有新开的一局才播简报，中途重连不打断
+  startBriefing(data);
 }
 
 function updateRematchPanel(data) {
@@ -2950,6 +3143,18 @@ function updateActionPanel(data) {
 
   if (myRole === 'spectator') { if (panelContainer) panelContainer.style.display = 'none'; return; } 
   else { if (panelContainer) panelContainer.style.display = 'block'; }
+
+  // 简报阶段：收起指令区，等情报同步结束后由 render() 恢复
+  if (briefingState.active) {
+    if (actionControls) actionControls.style.display = 'none';
+    if (lootPanel) lootPanel.style.display = 'none';
+    if (silencedPanel) silencedPanel.style.display = 'none';
+    if (actionWaiting) {
+      actionWaiting.style.display = 'block';
+      actionWaiting.innerHTML = '<div class="spinner">📡</div><p>战前情报同步中，请先读取对手的机缘与三维...</p>';
+    }
+    return;
+  }
 
   if (targetSelector) {
     if (cap === 2) targetSelector.style.display = 'none'; else targetSelector.style.display = 'flex';

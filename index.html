@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>圣魔机缘</title>
-    <link href="style.css?v=20261101-mode8" rel="stylesheet" type="text/css" />
+    <link href="style.css?v=20261102-briefing1" rel="stylesheet" type="text/css" />
   </head>
   <body>
     <div id="global-invite-alert" style="display: none">
@@ -1520,6 +1520,61 @@
     </div>
   </div>
 
+  <!-- 战前情报简报：每局开始前冻结 5 秒，展示全员本局机缘与三维上限 -->
+  <div
+    id="briefing-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="briefing-title"
+    aria-hidden="true"
+  >
+    <div class="briefing-frame">
+      <header class="briefing-head">
+        <div class="briefing-kicker">
+          <span class="briefing-signal" aria-hidden="true"></span>
+          PRE-MATCH BRIEFING<span class="briefing-slash">/</span>战前情报同步
+        </div>
+        <h2 class="briefing-title" id="briefing-title">
+          特工档案<span>OPERATIVE DOSSIERS</span>
+        </h2>
+        <div class="briefing-chips">
+          <span class="briefing-chip" id="briefing-mode-chip">1 v 1 · 决斗</span>
+          <span class="briefing-chip is-gold" id="briefing-round-chip">ROUND 01</span>
+          <span class="briefing-chip is-muted" id="briefing-rule-chip">标准战场</span>
+        </div>
+      </header>
+
+      <div class="briefing-grid" id="briefing-grid" data-count="2"></div>
+
+      <p class="briefing-hint">战斗中点击任意机缘名，可随时查看完整效果与代价</p>
+
+      <footer class="briefing-foot">
+        <div class="briefing-timer">
+          <span class="briefing-count" id="briefing-countdown">5</span>
+          <span class="briefing-timer-label">秒后同步完成</span>
+        </div>
+        <div
+          class="briefing-progress"
+          role="progressbar"
+          aria-label="情报同步进度"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="100"
+        >
+          <i id="briefing-progress-bar"></i>
+        </div>
+        <button
+          type="button"
+          class="briefing-skip"
+          id="briefing-skip"
+          onclick="endBriefing()"
+        >
+          跳过简报 ▸
+        </button>
+      </footer>
+    </div>
+  </div>
+
   <!-- Firebase 延迟到页面主体加载完成后再加载，降低移动端首屏阻塞风险 -->
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-database-compat.js"></script>
@@ -1527,6 +1582,6 @@
   <!-- App Check 暂时停用，用于定位手机端无法进入的问题 -->
   <!-- <script src="https://www.gstatic.com/firebasejs/9.1.0/firebase-app-check-compat.js"></script> -->
 
-  <script src="script.js?v=20261101-mode8"></script>
+  <script src="script.js?v=20261102-briefing1"></script>
 </body>
 </html>
