@@ -1378,7 +1378,7 @@ async function exitGame() {
     if (oldRoom) oldRoom.off();
     if (db && oldId) db.ref('rooms_chat/' + oldId).off();
     roomRef=null; currentRoomId=''; myRole=null; gameState=null; isPvE=false; isProcessing=false; isRerollingGlobal=false;
-    closeBriefingOverlay(); briefingState.done = false;
+    closeBriefingOverlay(); briefingState.done = false; afxClearAll();
     document.querySelectorAll('.fixed-overlay').forEach(el=>el.style.display='none');
     ['game-container','waiting-room','rematch-panel','room-chat-panel','talent-overlay','prayer-overlay'].forEach(id=>{const el=document.getElementById(id);if(el) el.style.display='none';});
     document.querySelectorAll('input[name="atk-target"]').forEach(el=>el.checked=false);
@@ -2001,6 +2001,29 @@ function getSmartAiMove(aiKey, enemiesArray) {
   return { move: chosenMove, val: shootVal };
 }
 
+// ==================== 行动可视化：结算期收集「行动者 → 目标」 ====================
+// 只收集有明确指向的动作（射击 / 地刺 / 圣光 / 封行 / 共生 / 招魂），
+// 装弹、防御、包扎这类无目标动作由战报文字与卡面展示，不画箭头。
+const AFX_DIRECTED = { shoot: 1, fatal_shoot: 1, ground_spike: 1, holy_light: 1, heretic_seal: 1, symbiosis: 1, necromancy: 1 };
+
+function collectActionFx(data, aliveKeys, moveMap) {
+  const items = [];
+  for (let i = 0; i < aliveKeys.length; i++) {
+    const key = aliveKeys[i];
+    const p = data[key];
+    if (!p || !p.move || !p.target) continue;
+    if (!AFX_DIRECTED[p.move]) continue;
+    items.push({
+      actor: key,
+      target: String(p.target),
+      move: p.move,
+      moveName: (moveMap && moveMap[p.move]) || p.move,
+      val: Number(p.val) || 0
+    });
+  }
+  return items;
+}
+
 // 核心更新：全局引入 roundDmg 变量以支撑共生机制
 function processRound() {
   let data = gameState; let logs = [];
@@ -2037,6 +2060,9 @@ function processRound() {
     actionStrs.push(`${p.replace('p', '').toUpperCase()}:${mStr}`);
   }
   const actionHeader = `【${actionStrs.join(' | ')}】`;
+
+  // 行动可视化：记录「谁对谁做了什么」，供各端画箭头（自己的行动由客户端过滤掉）
+  data.actionFx = { round: data.round, items: collectActionFx(data, alive, moveMap) };
 
   // 1. 预处理：记录圣光霸体与缄默防卫限制，处理认输与强退
   let isInvincible = {};
@@ -3795,4 +3821,248 @@ document.querySelectorAll('#stats-board .stat-item').forEach(row => {
   });
   row.prepend(caption);
 });
+
+
+// ==================== 行动可视化 · 箭头层 (Action Arrows) ====================
+// 别人出招后，从行动者卡面拉一条动态箭头指向目标，箭头上标注「3 对 4 使用 地刺」。
+// 自己的行动不画（按 myRole 过滤）；箭头层固定定位且 pointer-events:none，不遮挡任何操作。
+let afxLive = [];
+
+function afxCardRect(key) {
+  const el = document.getElementById(key + '-card');
+  if (!el || !el.getBoundingClientRect) return null;
+  const rect = el.getBoundingClientRect();
+  if (rect.width < 24 || rect.height < 24) return null;
+  return rect;
+}
+
+// 求「矩形中心 → 目标方向」与矩形边框的交点
+function afxEdgePoint(rect, towardX, towardY) {
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = towardX - cx;
+  const dy = towardY - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const scaleX = dx === 0 ? Infinity : (rect.width / 2) / Math.abs(dx);
+  const scaleY = dy === 0 ? Infinity : (rect.height / 2) / Math.abs(dy);
+  const s = Math.min(scaleX, scaleY);
+  return { x: cx + dx * s, y: cy + dy * s };
+}
+
+// 起止点 + 二次贝塞尔控制点 + 标签落点；index 用来让多条箭头朝不同方向弯，避免重叠
+function afxGeometry(src, dst, index) {
+  const scx = src.left + src.width / 2;
+  const scy = src.top + src.height / 2;
+  const dcx = dst.left + dst.width / 2;
+  const dcy = dst.top + dst.height / 2;
+  const rawStart = afxEdgePoint(src, dcx, dcy);
+  const rawEnd = afxEdgePoint(dst, scx, scy);
+  const gapX = rawEnd.x - rawStart.x;
+  const gapY = rawEnd.y - rawStart.y;
+  const gapLen = Math.sqrt(gapX * gapX + gapY * gapY) || 1;
+  const ux = gapX / gapLen;
+  const uy = gapY / gapLen;
+  // 2×2 布局里相邻卡片的间距只有 6~12px，纯边到边会短到反向：
+  // 让尾巴往源卡内部再伸一段，箭头则停在目标卡外沿，保证任何布局下都看得清。
+  const wantLen = Math.max(64, gapLen);
+  const tail = Math.max(0, wantLen - gapLen);
+  const start = { x: rawStart.x - ux * tail + ux * 2, y: rawStart.y - uy * tail + uy * 2 };
+  const end = { x: rawEnd.x - ux * 3, y: rawEnd.y - uy * 3 };
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const mx = (start.x + end.x) / 2;
+  const my = (start.y + end.y) / 2;
+  const bendBase = Math.min(52, Math.max(16, len * 0.16));
+  // 第三条起把弧度再放大一点，避免同侧两条箭头重叠
+  const bend = bendBase * (1 + Math.floor(index / 2) * 0.35) * (index % 2 === 0 ? 1 : -1);
+  const control = { x: mx - uy * bend, y: my + ux * bend };
+  return {
+    start: start,
+    control: control,
+    end: end,
+    label: {
+      x: 0.25 * start.x + 0.5 * control.x + 0.25 * end.x,
+      y: 0.25 * start.y + 0.5 * control.y + 0.25 * end.y
+    }
+  };
+}
+
+function afxColor(move) {
+  if (move === 'ground_spike') return '#f0c879';
+  if (move === 'holy_light') return '#7ee5ce';
+  if (move === 'heretic_seal' || move === 'symbiosis' || move === 'necromancy') return '#b48cff';
+  if (move === 'fatal_shoot') return '#ff6b7a';
+  return '#ff9aa2';
+}
+
+function afxLabelText(it) {
+  const a = String(it.actor).replace('p', '').toUpperCase();
+  const b = String(it.target).replace('p', '').toUpperCase();
+  const name = it.moveName || it.move || '行动';
+  const shots = (it.move === 'shoot' || it.move === 'fatal_shoot') && it.val > 0 ? ' ×' + it.val : '';
+  return a + ' 对 ' + b + ' 使用 ' + name + shots;
+}
+
+function afxPlace(item) {
+  const src = afxCardRect(item.actor);
+  const dst = afxCardRect(item.target);
+  if (!src || !dst || !item.path) return;
+  const g = afxGeometry(src, dst, item.index);
+  item.path.setAttribute('d', 'M' + g.start.x.toFixed(1) + ',' + g.start.y.toFixed(1) +
+    ' Q' + g.control.x.toFixed(1) + ',' + g.control.y.toFixed(1) +
+    ' ' + g.end.x.toFixed(1) + ',' + g.end.y.toFixed(1));
+  const angle = Math.atan2(g.end.y - g.control.y, g.end.x - g.control.x) * 180 / Math.PI;
+  if (item.head) {
+    item.head.setAttribute('transform', 'translate(' + g.end.x.toFixed(1) + ',' + g.end.y.toFixed(1) + ') rotate(' + angle.toFixed(1) + ')');
+  }
+  const padX = 92;
+  const padY = 34;
+  const maxX = Math.max(padX, (window.innerWidth || 360) - padX);
+  const maxY = Math.max(padY, (window.innerHeight || 640) - padY);
+  item.label.style.left = Math.min(Math.max(g.label.x, padX), maxX) + 'px';
+  item.label.style.top = Math.min(Math.max(g.label.y, padY), maxY) + 'px';
+  // 画线动画结束后，若因滚动/旋转导致长度变化，重新铺满整条虚线
+  if (item.path.getTotalLength && Date.now() > item.lockedUntil) {
+    const total = item.path.getTotalLength();
+    item.path.style.strokeDasharray = total + ' ' + total;
+    item.path.style.strokeDashoffset = '0';
+  }
+}
+
+function afxRetire(item) {
+  if (!item || item.retired) return;
+  item.retired = true;
+  const fade = { duration: 280, easing: 'ease-out', fill: 'forwards' };
+  [item.path, item.head, item.label].forEach(function (el) {
+    if (el && el.animate) el.animate([{ opacity: 1 }, { opacity: 0 }], fade);
+  });
+  setTimeout(function () {
+    [item.path, item.head, item.label].forEach(function (el) {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    afxLive = afxLive.filter(function (x) { return x !== item; });
+    if (!afxLive.length) {
+      const layer = document.getElementById('action-fx-layer');
+      if (layer) { layer.classList.remove('is-live'); layer.setAttribute('aria-hidden', 'true'); }
+    }
+  }, 300);
+}
+
+function afxClearAll() {
+  afxLive.forEach(function (item) {
+    [item.path, item.head, item.label].forEach(function (el) {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+  });
+  afxLive = [];
+  const layer = document.getElementById('action-fx-layer');
+  if (layer) { layer.classList.remove('is-live'); layer.setAttribute('aria-hidden', 'true'); }
+}
+
+function afxPlay(fx) {
+  const layer = document.getElementById('action-fx-layer');
+  const svg = document.getElementById('action-fx-svg');
+  if (!layer || !svg) return;
+  const list = ((fx && fx.items) || []).filter(function (it) {
+    return it && it.actor && it.target && it.actor !== myRole && it.actor !== it.target;
+  });
+  if (!list.length) return;
+  afxClearAll();
+  layer.classList.add('is-live');
+  layer.setAttribute('aria-hidden', 'false');
+  const reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  list.forEach(function (it, index) {
+    if (!afxCardRect(it.actor) || !afxCardRect(it.target)) return;
+    const color = afxColor(it.move);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('class', 'afx-path');
+    path.style.color = color;
+    const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    head.setAttribute('class', 'afx-head');
+    head.setAttribute('points', '0,0 -13,-6.5 -13,6.5');
+    head.style.color = color;
+    const label = document.createElement('div');
+    label.className = 'afx-label';
+    label.textContent = afxLabelText(it);
+    label.style.borderColor = color + 'aa';
+    svg.appendChild(path);
+    svg.appendChild(head);
+    layer.appendChild(label);
+
+    const item = { actor: it.actor, target: it.target, index: index, path: path, head: head, label: label, retired: false, lockedUntil: 0 };
+    afxLive.push(item);
+    item.lockedUntil = Date.now() + 900; // 画线期间不跟随滚动重排，避免抖动
+    afxPlace(item);
+
+    const delay = reduced ? 0 : index * 110;
+    if (reduced) {
+      path.style.strokeDasharray = 'none';
+      path.style.strokeDashoffset = '0';
+      head.style.opacity = '1';
+      label.style.animation = 'none';
+      label.style.opacity = '1';
+    } else {
+      const total = path.getTotalLength ? path.getTotalLength() : 0;
+      if (total && path.animate) {
+        path.style.strokeDasharray = total + ' ' + total;
+        path.style.strokeDashoffset = String(total);
+        path.animate([{ strokeDashoffset: total }, { strokeDashoffset: 0 }], {
+          duration: 430, delay: delay, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards'
+        });
+      }
+      head.style.opacity = '0';
+      if (head.animate) {
+        head.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: delay + 350, fill: 'forwards', easing: 'ease-out' });
+      } else { head.style.opacity = '1'; }
+      label.style.animationDelay = (delay + 140) + 'ms';
+    }
+    setTimeout(function () { afxRetire(item); }, delay + (reduced ? 2400 : 2600));
+  });
+
+  if (!afxLive.length) layer.classList.remove('is-live');
+}
+
+let afxRepositionQueued = false;
+function afxReposition() {
+  if (!afxLive.length || afxRepositionQueued) return;
+  afxRepositionQueued = true;
+  requestAnimationFrame(function () {
+    afxRepositionQueued = false;
+    afxLive.forEach(function (item) { if (!item.retired) afxPlace(item); });
+  });
+}
+window.addEventListener('scroll', afxReposition, true);
+window.addEventListener('resize', afxReposition);
+
+// 只有在「回合数前进」且 actionFx 正好是上一回合的结算时才播放，避免重复渲染反复触发
+(() => {
+  const original = render;
+  let lastRound = -1;
+  let epoch = -1;
+  render = function (data) {
+    original(data);
+    if (!data) return;
+    if (epoch !== battleSessionEpoch) {
+      epoch = battleSessionEpoch;
+      lastRound = -1;
+      afxClearAll();
+    }
+    const round = Number(data.round) || 0;
+    if (lastRound !== -1 && round < lastRound) {
+      lastRound = round;
+      afxClearAll();
+      return;
+    }
+    if (data.status !== 'playing' && data.status !== 'finished') return;
+    if (lastRound === -1) { lastRound = round; return; }
+    if (round === lastRound) return;
+    lastRound = round;
+    const fx = data.actionFx;
+    if (!fx || Number(fx.round) !== round - 1) return;
+    afxPlay(fx);
+  };
+})();
+
 

@@ -1127,4 +1127,36 @@ body.briefing-open{overflow:hidden}
 #briefing-overlay.is-paused .briefing-count{color:#e6c58c}
 #briefing-overlay.is-paused .briefing-signal{animation:none;opacity:.45}
 
+/* ==================== 行动箭头 (Action Arrows) ====================
+   其他玩家出招时，从行动者卡面拉一条带箭头的曲线指向目标，标签写明“3 对 4 使用 地刺”。
+   整层固定定位、pointer-events:none，不遮挡卡面点击与滚动。 */
+#action-fx-layer{position:fixed;inset:0;z-index:1500;display:none;pointer-events:none;overflow:hidden}
+#action-fx-layer.is-live{display:block}
+#action-fx-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.afx-path{
+  fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.55)) drop-shadow(0 0 6px currentColor);
+}
+.afx-head{fill:currentColor;stroke:none;filter:drop-shadow(0 0 5px currentColor)}
+.afx-label{
+  position:absolute;transform:translate(-50%,-50%);
+  padding:4px 11px;border-radius:999px;
+  background:rgba(9,16,24,.94);border:1px solid rgba(126,229,206,.45);
+  color:#eaf7f4;font-size:11px;letter-spacing:.5px;white-space:nowrap;
+  font-variant-numeric:tabular-nums;box-shadow:0 6px 18px rgba(0,0,0,.5);
+  opacity:0;animation:afx-label-in .26s ease-out forwards;
+}
+@keyframes afx-label-in{
+  from{opacity:0;transform:translate(-50%,-50%) scale(.88)}
+  to{opacity:1;transform:translate(-50%,-50%) scale(1)}
+}
+@media(max-width:620px){
+  .afx-label{font-size:10px;padding:3px 9px}
+  .afx-path{stroke-width:2.2}
+}
+@media(prefers-reduced-motion:reduce){
+  .afx-label{animation:none!important;opacity:1}
+}
+
+
 
