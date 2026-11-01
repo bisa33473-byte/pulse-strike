@@ -1913,6 +1913,15 @@ function getSmartAiMove(aiKey, enemiesArray) {
 // 核心更新：全局引入 roundDmg 变量以支撑共生机制
 function processRound() {
   let data = gameState; let logs = [];
+  // Presentation metadata: retain every actual HP hit, including multiple attackers.
+  // Synced with the room so each viewer can apply their own feedback perspective.
+  data.combatHits = { round: data.round, hits: [] };
+  function recordHpHit(source, target, amount, hpBefore) {
+    const actual = Math.min(Math.max(0, hpBefore), Math.max(0, amount));
+    if (actual > 0 && data[source] && data[target] && source !== target) {
+      data.combatHits.hits.push({ source, target, amount: actual });
+    }
+  }
   const moveMap = { reload:'装弹', shield:'防御', duck:'趴下', ground_spike:'地刺', rock:'石头', shoot:'射击', heal:'包扎', bandage:'绷带', holy_light:'圣光', dual_heal:'渡灵', fatal_shoot:'狂击', heretic_seal:'封行', symbiosis:'共生', stealth_action:'缄默', crimson_illusion:'幻境', necromancy:'招魂', skip:'禁锢(跳过)', surrender:'认输', quit:'强退' };
   const cap = data.config.capacity; const allKeys = ['p1', 'p2', 'p3', 'p4'];
 
@@ -2090,6 +2099,7 @@ function processRound() {
           logs.push(`<span class="log-dmg">${attN} ${hitType}对 ${defN} 造成 ${dmgToApply} 点理智损伤！</span>`);
       } else {
           if (defPlayer.silenced > 0 && defPlayer.hp - dmgToApply <= 0) { dmgToApply = Math.max(0, defPlayer.hp - 1); logs.push(`🔮 【封行】庇护！${defN} 免疫致命一击苟活！`); }
+          recordHpHit(attKey, defKey, dmgToApply, defPlayer.hp);
           defPlayer.hp -= dmgToApply; defPlayer.roundDmg += dmgToApply; 
           logs.push(`<span class="log-dmg">${attN} ${hitType}对 ${defN} 造成 ${dmgToApply} 伤</span>`);
       }
@@ -2135,7 +2145,7 @@ function processRound() {
           if (hasTalent(att, 'm_d5')) {
               att.poison -= att.val;
               if (def && def.hp > 0) {
-                  def.poisonStacks = att.val; def.poisonTimer = 3; def.poisonDmgTaken = 0;
+                  def.poisonStacks = att.val; def.poisonTimer = 3; def.poisonDmgTaken = 0; def.poisonSource = attKey;
                   logs.push(`<span class="log-dmg">☠️ ${attN} 淬毒匕见！向 ${defN} 注入了 ${att.val} 层鸩毒！</span>`);
               }
               continue; 
@@ -2246,6 +2256,7 @@ function processRound() {
                    if (targetPlayer.silenced > 0) { sharedDmg = Math.floor(sharedDmg / 2); }
                    if (targetPlayer.silenced > 0 && targetPlayer.hp - sharedDmg <= 0) { sharedDmg = Math.max(0, targetPlayer.hp - 1); logs.push(`🔮 【封行】庇护！${targetPlayer.username || t.toUpperCase()} 免疫了共生的致命一击苟活！`); }
 
+                   recordHpHit(p, t, sharedDmg, targetPlayer.hp);
                    targetPlayer.hp -= sharedDmg;
                    targetPlayer.roundDmg += sharedDmg;
                    if (sharedDmg > 0) logs.push(`<span class="log-dmg">🩸 【共生】触动！${player.username || p.toUpperCase()} 受到的 ${sharedDmg} 点伤害同步绞杀了 ${targetPlayer.username || t.toUpperCase()}！</span>`);
@@ -2303,6 +2314,7 @@ function processRound() {
                           data.sanityData[allKeys[i]] -= 2; pData.roundSanityDmg += 2;
                           logs.push(`<span class="log-dmg">☠️ 鸩毒发作！${pData.username || allKeys[i].toUpperCase()} 承受了 2 点理智反噬！</span>`);
                       } else {
+                          recordHpHit(pData.poisonSource, allKeys[i], 1, pData.hp);
                           pData.hp -= 1; pData.roundDmg += 1;
                           logs.push(`<span class="log-dmg">☠️ 鸩毒发作！${pData.username || allKeys[i].toUpperCase()} 毒血攻心，流失 1 点生命！</span>`);
                       }
@@ -3351,7 +3363,17 @@ function showTalentCodex() {
           const end=Math.max(start,Math.min(100,old.hp/now.maxHp*100));
           echo.style.left=start+'%';echo.style.width=(end-start)+'%';
         }
-        effect(card,'combat-slash','',700);effect(card,'resource-delta','生命 −'+(old.hp-now.hp));
+        // HP afterimage is shared by every viewer; impact feedback is perspective-specific.
+      }
+      const ownPlayer = myRole && myRole !== 'spectator' && data[myRole];
+      const newSettlement = data.round !== lastRound && data.combatHits?.round === data.round - 1;
+      const hits = newSettlement ? (data.combatHits.hits || []) : [];
+      const dealtByMe = !!ownPlayer && key !== myRole && hits.some(hit => hit.source === myRole && hit.target === key && hit.amount > 0);
+      const hurtMe = !!ownPlayer && key === myRole && (now.hp < old.hp || hits.some(hit => hit.target === key && hit.amount > 0));
+      if (dealtByMe) effect(card,'combat-slash','',700);
+      if (dealtByMe || hurtMe) {
+        const hpBar=document.getElementById(key+'-hp-visual');
+        if(hpBar){hpBar.classList.remove('hp-impact');void hpBar.offsetWidth;hpBar.classList.add('hp-impact');}
       }
       for(const type of ['ammo','shield']){
         if(type==='ammo'&&old.ammoType!==now.ammoType)continue;

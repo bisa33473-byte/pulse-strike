@@ -828,3 +828,8 @@ body:has(#game-container[style*="block"]){align-items:flex-start}
  #game-container .combat-slash{display:none!important}
 }
 #game-container .resource-caption{grid-column:1;grid-row:1;white-space:nowrap}
+
+/* Only the local player and targets they actually hurt receive a light HP impact. */
+#game-container .resource-hp.hp-impact{animation:hp-impact .32s ease-out}
+@keyframes hp-impact{0%,100%{transform:translateX(0)}20%{transform:translateX(-2px)}40%{transform:translateX(2px)}60%{transform:translateX(-1px)}80%{transform:translateX(1px)}}
+@media(prefers-reduced-motion:reduce){#game-container .resource-hp.hp-impact{animation:none!important}}
